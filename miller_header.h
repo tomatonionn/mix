@@ -218,7 +218,7 @@ void ct_init(struct Ciphertext *ct);
 void ct_clear(struct Ciphertext *ct);
 void G_random(struct efp12 *R);
 void symmetric_miller(struct fp12 *e, const struct efp12 P, const struct efp12 Q);
-void KeyGen(struct PubKey *pk, struct SecKey *sk, mpz_t p, mpz_t r);
+void KeyGen(struct PubKey *pk, struct SecKey *sk);
 void HomKeyGen(struct HomKey *hk, struct PubKey pk, struct SecKey sk, mpz_t omega, mpz_t p, mpz_t r);
 void Enc(struct Ciphertext *ct, struct PubKey pk, struct fp12 M, mpz_t omega, mpz_t p, mpz_t r);
 int Test(struct PubKey pk, struct HomKey hk, struct Ciphertext ct, mpz_t p);

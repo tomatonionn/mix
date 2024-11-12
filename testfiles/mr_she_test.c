@@ -26,11 +26,11 @@ int main (void){
     printf("\n");
 
     mpz_t omega;mpz_init(omega);
-    usleep(1000);
     gmp_randstate_t state;
     gmp_randinit_default(state);
     struct timeval tv;
     gettimeofday(&tv, NULL);
+    usleep(1000);
     unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;
     gmp_randseed_ui(state, seed);
     mpz_urandomm(omega, state, r);
@@ -44,7 +44,7 @@ int main (void){
     pk_init(&pk);
     struct SecKey sk;
     sk_init(&sk);
-    KeyGen(&pk, &sk, p, r);
+    KeyGen(&pk, &sk);
     printf("g : ");efp12_printf(pk.g);printf("\n");
     printf("g_1 : ");efp12_printf(pk.g1);printf("\n");
     printf("h_1 : ");efp12_printf(pk.h1);printf("\n");

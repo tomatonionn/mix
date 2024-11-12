@@ -1,4 +1,4 @@
-#include "miller_header.h"
+#include "../miller_header.h"
 
 int main (void){
     // 𝑒([𝑏]𝑃, [𝑎]𝑄) = 𝑒([𝑎]𝑃, [𝑏]𝑄) = 𝑒(𝑃, 𝑄)^𝑎𝑏

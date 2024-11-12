@@ -1,4 +1,4 @@
-#include "miller_header.h"
+#include "../miller_header.h"
  
 int main(void){
     // パラメータ定義
