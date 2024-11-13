@@ -143,18 +143,19 @@ void G_random(struct efp12 *R){
 
 void KeyGen(struct PubKey *pk, struct SecKey *sk){
     
+    // シード設定
     gmp_randstate_t state;
     gmp_randinit_default(state);
     struct timeval tv;
     gettimeofday(&tv, NULL);
     usleep(100);
-    unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;  // ミリ秒単位のシード
+    unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;
     gmp_randseed_ui(state, seed);
 
+    // パラメータ設定
     mpz_t z;mpz_t p;mpz_t r;mpz_t t;
     mpz_inits(z, p, r, t, NULL);
     gen_params(z, p, r, t);
-
     struct fp b;mpz_init(b.x0);
     mpz_set_str(b.x0, "2806781539090543763928146397551071025921865095800381583843579968964127551432039332258992094003963260740981125881345582810061579481053866112", 10);
 
@@ -162,22 +163,17 @@ void KeyGen(struct PubKey *pk, struct SecKey *sk){
     struct PubKey pk_tmp;pk_init(&pk_tmp);
     struct SecKey sk_tmp;sk_init(&sk_tmp);
 
-    // hk in SHA-512
-
+    // 出力
     G_random(&pk_tmp.g);       // g ← G
-
     G_random(&pk_tmp.h1);      // h1 ← G
-
     G_random(&pk_tmp.h2);      // h2 ← G
-
     G_random(&pk_tmp.h3);      // h3 ← G
-
     G_random(&pk_tmp.h4);      // h4 ← G
-
     mpz_urandomm(sk_tmp.alpha, state, r);       // α ← Zr
-
     efp12_scm(&pk_tmp.g1, pk_tmp.g, sk_tmp.alpha, p);   // g1 ← g^α
+    // hk, f ← SHA-512
 
+    // 代入
     efp12_set(&pk->g, pk_tmp.g);
     efp12_set(&pk->g1, pk_tmp.g1);
     efp12_set(&pk->h1, pk_tmp.h1);
@@ -186,19 +182,23 @@ void KeyGen(struct PubKey *pk, struct SecKey *sk){
     efp12_set(&pk->h4, pk_tmp.h4);
     mpz_set(sk->alpha, sk_tmp.alpha);
 
+    // 解放
     pk_clear(&pk_tmp);
     sk_clear(&sk_tmp);
     fp_clear(&b);
+    mpz_clears(z, p, r, t, NULL);
+    gmp_randclear(state);
 }
 
 void HomKeyGen(struct HomKey *hk, struct PubKey pk, struct SecKey sk, mpz_t omega, mpz_t p, mpz_t r){
     
+    // シード設定
     gmp_randstate_t state;
     gmp_randinit_default(state);
     struct timeval tv;
     gettimeofday(&tv, NULL);
     usleep(100);
-    unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;  // ミリ秒単位のシード
+    unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;
     gmp_randseed_ui(state, seed);
 
     mpz_t index;mpz_init(index);
@@ -206,41 +206,43 @@ void HomKeyGen(struct HomKey *hk, struct PubKey pk, struct SecKey sk, mpz_t omeg
     // 演算鍵（トラップドア）生成
     struct HomKey hk_tmp;hk_init(&hk_tmp);
 
-    mpz_urandomm(hk_tmp.rh3.r_w, state, r);          // r_{ω,i} ← Zr
-
-    mpz_urandomm(hk_tmp.rh4.r_w, state, r);          // r_{ω,i} ← Zr
+    mpz_urandomm(hk_tmp.rh3.r_w, state, r);          // r_{ω,3} ← Zr
+    mpz_urandomm(hk_tmp.rh4.r_w, state, r);          // r_{ω,4} ← Zr
 
     // h_{ω,3} ← (h_3 h^{-r_{ω,3}})^{1/(α-1))}
-    mpz_neg(index, hk_tmp.rh3.r_w);                  // -r_{ω,3}
-    mpz_mod(index, index, p);                  // index = -r_{ω,3} mod p
-    efp12_scm(&hk_tmp.rh3.h_w, pk.g, index, p);      // g^index
-    efp12_eca(&hk_tmp.rh3.h_w, hk_tmp.rh3.h_w, pk.h3, p);  // h_3 + g^index
-    mpz_sub(index, sk.alpha, omega);           // α - ω
-    mpz_invert(index, index, p);               // index = 1 / α - ω
-    efp12_scm(&hk_tmp.rh3.h_w, hk_tmp.rh3.h_w, index, p);  // h_{ω,3} = (h_3 h^{-r_{ω,3}})^{1/(α-1))}
+    efp12_scm(&hk_tmp.rh3.h_w, pk.g, hk_tmp.rh3.r_w, p);    // g^r_{ω,3}
+    fp12_neg(&hk_tmp.rh3.h_w.y, hk_tmp.rh3.h_w.y, p);       // g^-r_{ω,3}
+    efp12_eca(&hk_tmp.rh3.h_w, hk_tmp.rh3.h_w, pk.h3, p);   // h_3 + g^-r_{ω,3}
+    mpz_sub(index, sk.alpha, omega);                        // α - ω
+    mpz_invert(index, index, p);                            // index = 1 / α - ω
+    efp12_scm(&hk_tmp.rh3.h_w, hk_tmp.rh3.h_w, index, p);   // h_{ω,3} = (h_3 h^{-r_{ω,3}})^{1/(α-1))}
 
     // h_{ω,4} ← (h_4 h^{-r_{ω,4}})^{1/(α-1))}
-    mpz_neg(index, hk_tmp.rh4.r_w);                  // -r_{ω,4}
-    mpz_mod(index, index, p);                  // index = -r_{ω,4} mod p
-    efp12_scm(&hk_tmp.rh4.h_w, pk.g, index, p);      // g^index
-    efp12_eca(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, pk.h4, p);  // h_4 + g^index
-    mpz_sub(index, sk.alpha, omega);           // α - ω
-    mpz_invert(index, index, p);               // index = 1 / α - ω
-    efp12_scm(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, index, p);  // h_{ω,4} = (h_4 + h^{-r_{ω,4}})^{1/(α-1))}
+    efp12_scm(&hk_tmp.rh4.h_w, pk.g, hk_tmp.rh4.r_w, p);    // g^r_{ω,4}
+    fp12_neg(&hk_tmp.rh4.h_w.y, hk_tmp.rh4.h_w.y, p);       // g^-r_{ω,4}
+    efp12_eca(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, pk.h4, p);   // h_4 + g^index
+    mpz_sub(index, sk.alpha, omega);                        // α - ω
+    mpz_invert(index, index, p);                            // index = 1 / α - ω
+    efp12_scm(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, index, p);   // h_{ω,4} = (h_4 + h^{-r_{ω,4}})^{1/(α-1))}
 
     efp12_scm(&hk_tmp.g, pk.g, omega, p);          // g^{ω}
 
+    // 代入
     efp12_set(&hk->g, hk_tmp.g);
     mpz_set(hk->rh3.r_w, hk_tmp.rh3.r_w);
     efp12_set(&hk->rh3.h_w, hk_tmp.rh3.h_w);
     mpz_set(hk->rh4.r_w, hk_tmp.rh4.r_w);
     efp12_set(&hk->rh4.h_w, hk_tmp.rh4.h_w);
 
+    // 解放
+    hk_clear(&hk_tmp);
     mpz_clear(index);
+    gmp_randclear(state);
 }
 
 void Enc(struct Ciphertext *ct, struct PubKey pk, struct fp12 M, mpz_t omega, mpz_t p, mpz_t r){
-        
+
+    // シード設定
     gmp_randstate_t state;
     gmp_randinit_default(state);
     struct timeval tv;
@@ -256,31 +258,30 @@ void Enc(struct Ciphertext *ct, struct PubKey pk, struct fp12 M, mpz_t omega, mp
     // 暗号文生成
     struct Ciphertext ct_tmp;ct_init(&ct_tmp);
 
+    // s ← Zr
     mpz_t s;mpz_init(s);
-    mpz_urandomm(s, state, r);                          // s ← Zr
+    mpz_urandomm(s, state, r);
 
     // c1 ← g1^s g^{-sω}
-    efp12_scm(&ct_tmp.c1, pk.g1, s, p);                     // g1^s
+    efp12_scm(&ct_tmp.c1, pk.g1, s, p);                 // g1^s
     mpz_mul(index, s, omega);                           // sω
-    mpz_sub(index, index, p);                           // -sω
-    mpz_mod(index, index, p);                           // index = -sω mod p
-    efp12_scm(&efp12_tmp, pk.g, index, p);              // g^index
-    efp12_eca(&ct_tmp.c1, ct_tmp.c1, efp12_tmp, p);             // c1 = g1^s + g^{-sω}
+    efp12_scm(&efp12_tmp, pk.g, index, p);              // g^{sω}
+    fp12_neg(&efp12_tmp.y, efp12_tmp.y, p);             // g^{-sω}
+    efp12_eca(&ct_tmp.c1, ct_tmp.c1, efp12_tmp, p);     // c1 = g1^s + g^{-sω}
 
     // c2 ← e(g,g)^s
-    symmetric_miller(&ct_tmp.c2, pk.g, pk.g);      // e(g,g)
-    fp12_pow(&ct_tmp.c2, ct_tmp.c2, s, p);                      // c2 = e(g,g)^s
+    symmetric_miller(&ct_tmp.c2, pk.g, pk.g);           // e(g,g)
+    fp12_pow(&ct_tmp.c2, ct_tmp.c2, s, p);              // c2 = e(g,g)^s
 
     // c3 ← M・e(g,h1)^-s
-    symmetric_miller(&ct_tmp.c3, pk.g, pk.h1);     // e(g,h1)
-    mpz_neg(index, s);                                  // -s
-    mpz_mod(index, index, p);                           // index = -s mod p
-    fp12_pow(&ct_tmp.c3, ct_tmp.c3, index, p);                  // c3 = e(g,h1)^-s
-    fp12_mul(&ct_tmp.c3, ct_tmp.c3, M, p);                      // c3 = M・e(g,h1)^-s
+    symmetric_miller(&ct_tmp.c3, pk.g, pk.h1);          // e(g,h1)
+    fp12_pow(&fp12_tmp, ct_tmp.c3, s, p);               // e(g,h1)^s
+    fp12_inv(&fp12_tmp, fp12_tmp, p);                   // e(g,h1)^-s
+    fp12_mul(&ct_tmp.c3, ct_tmp.c3, M, p);              // c3 = M・e(g,h1)^-s
 
     // c4 ← e(g,h2)^s
-    symmetric_miller(&ct_tmp.c4, pk.g, pk.h2);     // e(g,h2)
-    fp12_pow(&ct_tmp.c4, ct_tmp.c4, s, p);                      // c4 = e(g,h2)^s
+    symmetric_miller(&ct_tmp.c4, pk.g, pk.h2);          // e(g,h2)
+    fp12_pow(&ct_tmp.c4, ct_tmp.c4, s, p);              // c4 = e(g,h2)^s
 
     mpz_t delta;mpz_init(delta);
     Gamma(delta, ct_tmp.c1, ct_tmp.c2, ct_tmp.c3, ct_tmp.c4, p);        // δ ← Γ(c1,c2,c3,c4)
@@ -288,21 +289,23 @@ void Enc(struct Ciphertext *ct, struct PubKey pk, struct fp12 M, mpz_t omega, mp
 
     // c5 ← e(g,h3)^s e(g,h4)^sδ
     struct fp12 c5;fp12_init(&c5);
-    symmetric_miller(&fp12_tmp, pk.g, pk.h3);  // e(g,h3)
+    symmetric_miller(&fp12_tmp, pk.g, pk.h3);           // e(g,h3)
     fp12_pow(&fp12_tmp, fp12_tmp, s, p);                // e(g,h3)^s
-    symmetric_miller(&c5, pk.g, pk.h4);        // e(g,h4)
+    symmetric_miller(&c5, pk.g, pk.h4);                 // e(g,h4)
     mpz_mul(index, s, delta);                           // sδ
     fp12_pow(&c5, c5, index, p);                        // e(g,h4)^sδ
     fp12_mul(&c5, fp12_tmp, c5, p);                     // c5 = e(g,h3)^s e(g,h4)^sδ
 
-    Function(ct_tmp.tau, c5);                               // τ ← F(c5)
+    Function(ct_tmp.tau, c5);                           // τ ← F(c5)
 
+    // 代入
     efp12_set(&ct->c1, ct_tmp.c1);
     fp12_set(&ct->c2, ct_tmp.c2);
     fp12_set(&ct->c3, ct_tmp.c3);
     fp12_set(&ct->c4, ct_tmp.c4);
     mpz_set(ct->tau, ct_tmp.tau);
 
+    // 解放
     mpz_clear(s);
     mpz_clear(index);
     efp12_clear(&efp12_tmp);
@@ -310,7 +313,7 @@ void Enc(struct Ciphertext *ct, struct PubKey pk, struct fp12 M, mpz_t omega, mp
     mpz_clear(delta);
     fp12_clear(&c5);
     ct_clear(&ct_tmp);
-
+    gmp_randclear(state);
 }
 
 int Test(struct PubKey pk, struct HomKey hk, struct Ciphertext ct, mpz_t p){
@@ -321,30 +324,37 @@ int Test(struct PubKey pk, struct HomKey hk, struct Ciphertext ct, mpz_t p){
     struct fp12 fp12_tmp2;fp12_init(&fp12_tmp2);
     
     // 暗号文検証
+    int test = 0;
 
 
+    // δ ← Γ(c1,c2,c3,c4)
     mpz_t delta;mpz_init(delta);
-    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);                // δ ← Γ(c1,c2,c3,c4)
-    // gmp_printf("delta : %Zd\n", delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
 
     // τ_ch ← f(e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ})
     mpz_t tau_ch;mpz_init(tau_ch);
-    efp12_scm(&efp12_tmp, hk.rh4.h_w, delta, p);                  // h_{ω,4}^δ
-    efp12_eca(&efp12_tmp, hk.rh3.h_w, efp12_tmp, p);              // h_{ω,3) h_{ω,4}^δ
-    symmetric_miller(&fp12_tmp1, ct.c1, efp12_tmp);    // e(c1,h_{ω,3) h_{ω,4}^δ)
-    mpz_mul(index, hk.rh4.r_w, delta);                            // r_{ω,4}δ
-    mpz_add(index, index, hk.rh3.r_w);                            // r_{ω,3}+r_{ω,4}δ
-    fp12_pow(&fp12_tmp2, ct.c2, index, p);                      // c2^{r_{ω,3}+r_{ω,4}δ}
-    fp12_mul(&fp12_tmp1, fp12_tmp1, fp12_tmp2, p);              // e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
-    Function(tau_ch, fp12_tmp1);                                // τ_ch = f(e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ})
+    efp12_scm(&efp12_tmp, hk.rh4.h_w, delta, p);            // h_{ω,4}^δ
+    efp12_eca(&efp12_tmp, hk.rh3.h_w, efp12_tmp, p);        // h_{ω,3) h_{ω,4}^δ
+    symmetric_miller(&fp12_tmp1, ct.c1, efp12_tmp);         // e(c1,h_{ω,3) h_{ω,4}^δ)
+    mpz_mul(index, hk.rh4.r_w, delta);                      // r_{ω,4}δ
+    mpz_add(index, index, hk.rh3.r_w);                      // r_{ω,3}+r_{ω,4}δ
+    fp12_pow(&fp12_tmp2, ct.c2, index, p);                  // c2^{r_{ω,3}+r_{ω,4}δ}
+    fp12_mul(&fp12_tmp1, fp12_tmp1, fp12_tmp2, p);          // e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
+    Function(tau_ch, fp12_tmp1);                            // τ_ch = f(e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ})
 
     if(mpz_cmp(ct.tau, tau_ch) == 0){
-        return 1;
-    }
-    else{
-        return 0;
+        test = 1;
     }
 
+    // 解放
+    mpz_clear(index);
+    efp12_clear(&efp12_tmp);
+    fp12_clear(&fp12_tmp1);
+    fp12_clear(&fp12_tmp2);
+    mpz_clear(delta);
+    mpz_clear(tau_ch);
+
+    return test;
 }
 
 void Dec(struct fp12 *M, struct PubKey pk, struct SecKey sk, mpz_t omega, struct Ciphertext ct, mpz_t p, mpz_t r){
