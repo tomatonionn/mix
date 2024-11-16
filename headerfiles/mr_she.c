@@ -210,19 +210,27 @@ void HomKeyGen(struct HomKey *hk, struct PubKey pk, struct SecKey sk, mpz_t omeg
     mpz_urandomm(hk_tmp.rh4.r_w, state, r);          // r_{ω,4} ← Zr
 
     // h_{ω,3} ← (h_3 h^{-r_{ω,3}})^{1/(α-1))}
-    efp12_scm(&hk_tmp.rh3.h_w, pk.g, hk_tmp.rh3.r_w, p);    // g^r_{ω,3}
-    fp12_neg(&hk_tmp.rh3.h_w.y, hk_tmp.rh3.h_w.y, p);       // g^-r_{ω,3}
+    // efp12_scm(&hk_tmp.rh3.h_w, pk.g, hk_tmp.rh3.r_w, p);    // g^r_{ω,3}
+    // fp12_neg(&hk_tmp.rh3.h_w.y, hk_tmp.rh3.h_w.y, p);       // g^-r_{ω,3}
+    mpz_neg(index, hk_tmp.rh3.r_w);                         // -r_{ω,3}
+    mpz_mod(index, index, r);                               // index = -r_{ω,3} mod r
+    efp12_scm(&hk_tmp.rh3.h_w, pk.g, index, p);             // g^{-r_{ω,3}}
     efp12_eca(&hk_tmp.rh3.h_w, hk_tmp.rh3.h_w, pk.h3, p);   // h_3 + g^-r_{ω,3}
     mpz_sub(index, sk.alpha, omega);                        // α - ω
-    mpz_invert(index, index, p);                            // index = 1 / α - ω
+    mpz_mod(index, index, r);                               // index = α - ω mod r
+    mpz_invert(index, index, r);                            // index = 1 / α - ω mod r
     efp12_scm(&hk_tmp.rh3.h_w, hk_tmp.rh3.h_w, index, p);   // h_{ω,3} = (h_3 h^{-r_{ω,3}})^{1/(α-1))}
 
     // h_{ω,4} ← (h_4 h^{-r_{ω,4}})^{1/(α-1))}
-    efp12_scm(&hk_tmp.rh4.h_w, pk.g, hk_tmp.rh4.r_w, p);    // g^r_{ω,4}
-    fp12_neg(&hk_tmp.rh4.h_w.y, hk_tmp.rh4.h_w.y, p);       // g^-r_{ω,4}
-    efp12_eca(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, pk.h4, p);   // h_4 + g^index
+    // efp12_scm(&hk_tmp.rh4.h_w, pk.g, hk_tmp.rh4.r_w, p);    // g^r_{ω,4}
+    // fp12_neg(&hk_tmp.rh4.h_w.y, hk_tmp.rh4.h_w.y, p);       // g^-r_{ω,4}
+    mpz_neg(index, hk_tmp.rh4.r_w);                         // -r_{ω,4}
+    mpz_mod(index, index, r);                               // index = -r_{ω,4} mod r
+    efp12_scm(&hk_tmp.rh4.h_w, pk.g, index, p);             // g^{-r_{ω,4}}
+    efp12_eca(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, pk.h4, p);   // h_4 + g^{-r_{ω,4}}
     mpz_sub(index, sk.alpha, omega);                        // α - ω
-    mpz_invert(index, index, p);                            // index = 1 / α - ω
+    mpz_mod(index, index, r);                               // index = α - ω mod r
+    mpz_invert(index, index, r);                            // index = 1 / α - ω
     efp12_scm(&hk_tmp.rh4.h_w, hk_tmp.rh4.h_w, index, p);   // h_{ω,4} = (h_4 + h^{-r_{ω,4}})^{1/(α-1))}
 
     efp12_scm(&hk_tmp.g, pk.g, omega, p);          // g^{ω}
@@ -261,12 +269,16 @@ void Enc(struct Ciphertext *ct, struct PubKey pk, struct fp12 M, mpz_t omega, mp
     // s ← Zr
     mpz_t s;mpz_init(s);
     mpz_urandomm(s, state, r);
+    // mpz_set_str(s, "172217921829381869275269344655194779874402692183495419028727528508256608133202356664259899343", 10);
 
     // c1 ← g1^s g^{-sω}
     efp12_scm(&ct_tmp.c1, pk.g1, s, p);                 // g1^s
     mpz_mul(index, s, omega);                           // sω
-    efp12_scm(&efp12_tmp, pk.g, index, p);              // g^{sω}
-    fp12_neg(&efp12_tmp.y, efp12_tmp.y, p);             // g^{-sω}
+    // efp12_scm(&efp12_tmp, pk.g, index, p);           // g^{sω}
+    // fp12_neg(&efp12_tmp.y, efp12_tmp.y, p);          // g^{-sω}
+    mpz_neg(index, index);                              // -sω
+    mpz_mod(index, index, r);                           // index = -sω mod r
+    efp12_scm(&efp12_tmp, pk.g, index, p);              // g^{-sω}
     efp12_eca(&ct_tmp.c1, ct_tmp.c1, efp12_tmp, p);     // c1 = g1^s + g^{-sω}
 
     // c2 ← e(g,g)^s
@@ -330,6 +342,7 @@ int Test(struct PubKey pk, struct HomKey hk, struct Ciphertext ct, mpz_t p){
     // δ ← Γ(c1,c2,c3,c4)
     mpz_t delta;mpz_init(delta);
     Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+    // gmp_printf("delta : %Zd\n", delta);
 
     // τ_ch ← f(e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ})
     mpz_t tau_ch;mpz_init(tau_ch);
