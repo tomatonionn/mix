@@ -95,6 +95,55 @@ int main (void){
     printf("Decrypted Message : ");fp12_printf(M);printf("\n");
     printf("\n");
 
+    // Evaluation
+    struct fp12 M2;fp12_init(&M2);
+    mpz_set_str(M2.x0.x0.x0.x0, "2", 10);
+    mpz_set_str(M2.x0.x0.x1.x0, "3", 10);
+    mpz_set_str(M2.x0.x1.x0.x0, "4", 10);
+    mpz_set_str(M2.x0.x1.x1.x0, "5", 10);
+    mpz_set_str(M2.x0.x2.x0.x0, "6", 10);
+    mpz_set_str(M2.x0.x2.x1.x0, "7", 10);
+    mpz_set_str(M2.x1.x0.x0.x0, "8", 10);
+    mpz_set_str(M2.x1.x0.x1.x0, "9", 10);
+    mpz_set_str(M2.x1.x1.x0.x0, "10", 10);
+    mpz_set_str(M2.x1.x1.x1.x0, "11", 10);
+    mpz_set_str(M2.x1.x2.x0.x0, "12", 10);
+    mpz_set_str(M2.x1.x2.x1.x0, "1", 10);
+    printf("Message2 : ");fp12_printf(M2);printf("\n");
+    printf("\n");
+
+    printf("Cypher Text2 = (c2_1, c2_2, c2_3, c2_4, τ2)\n");
+    struct Ciphertext ct2;ct_init(&ct2);
+    Enc(&ct2, pk, M2, omega, p, r);
+    printf("c2_1 : ");efp12_printf(ct2.c1);printf("\n");
+    printf("c2_2 : ");fp12_printf(ct2.c2);printf("\n");
+    printf("c2_3 : ");fp12_printf(ct2.c3);printf("\n");
+    printf("c2_4 : ");fp12_printf(ct2.c4);printf("\n");
+    gmp_printf("τ2 : %Zd\n", ct.tau);
+    printf("\n");
+
+    struct Ciphertext ct_eval;ct_init(&ct_eval);
+    Eval(&ct_eval, pk, hk, ct, ct2, p, r);
+    printf("c_eval_1 : ");efp12_printf(ct_eval.c1);printf("\n");
+    printf("c_eval_2 : ");fp12_printf(ct_eval.c2);printf("\n");
+    printf("c_eval_3 : ");fp12_printf(ct_eval.c3);printf("\n");
+    printf("c_eval_4 : ");fp12_printf(ct_eval.c4);printf("\n");
+    gmp_printf("τ_eval : %Zd\n", ct_eval.tau);
+    printf("\n");
+
+    test = Test(pk, hk, ct_eval, p);
+    printf("Test Result : ");
+    if(test == 1){printf("Success\n");}
+    else{printf("Failed\n");}
+    printf("\n");
+
+    struct fp12 M_eval;fp12_init(&M_eval);
+    Dec(&M_eval, pk, sk, omega, ct_eval, p, r);
+    printf("Decrypted Message : ");fp12_printf(M_eval);printf("\n");
+
+    struct fp12 M3;fp12_init(&M3);
+    fp12_mul(&M3, M, M2, p);
+    printf("M3 : ");fp12_printf(M3);printf("\n");
 
     gmp_randclear(state);
 }
