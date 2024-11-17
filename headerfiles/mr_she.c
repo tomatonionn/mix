@@ -467,7 +467,13 @@ void Dec(struct fp12 *M, struct PubKey pk, struct SecKey sk, mpz_t omega, struct
 
     if(fp12_cmp(ct.c4, c4_prime) != 0 || mpz_cmp(ct.tau, tau_ch) != 0){
         fp12_set(M, M_tmp);
-        printf("Decryption failed\n");
+        printf("DecryptionError\n");
+        if(fp12_cmp(ct.c4, c4_prime) != 0){
+            printf("c4 != c4'\n");
+        }
+        if(mpz_cmp(ct.tau, tau_ch) != 0){
+            printf("tau != tau_ch\n");
+        }
     }
 
     else{
@@ -493,7 +499,7 @@ void Dec(struct fp12 *M, struct PubKey pk, struct SecKey sk, mpz_t omega, struct
 
 }
 
-void Eval(struct Ciphertext ct, struct PubKey pk, struct HomKey hk, struct Ciphertext ct1, struct Ciphertext ct2, mpz_t p, mpz_t r){
+void Eval(struct Ciphertext *ct, struct PubKey pk, struct HomKey hk, struct Ciphertext ct1, struct Ciphertext ct2, mpz_t p, mpz_t r){
     
     mpz_t index;mpz_init(index);
     struct fp12 fp12_tmp;fp12_init(&fp12_tmp);
@@ -507,11 +513,11 @@ void Eval(struct Ciphertext ct, struct PubKey pk, struct HomKey hk, struct Ciphe
     struct fp12 c1_5;fp12_init(&c1_5);
     efp12_scm(&efp12_tmp, hk.rh4.h_w, delta1, p);       // h_{ω,4}^δ_1
     efp12_eca(&efp12_tmp, efp12_tmp, hk.rh3.h_w, p);    // h_{ω,3} + h_{ω,4}^δ_1
-    symmetric_miller(&c1_5, ct1.c1, efp12_tmp);             // e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1)
+    symmetric_miller(&c1_5, ct1.c1, efp12_tmp);         // e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1)
     mpz_mul(index, hk.rh4.r_w, delta1);                 // r_{ω,4}δ_1
     mpz_add(index, index, hk.rh3.r_w);                  // r_{ω,3}+r_{ω,4}δ_1
-    fp12_pow(&fp12_tmp, ct1.c2, index, p);                  // c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
-    fp12_mul(&c1_5, c1_5, fp12_tmp, p);                     // c_{1,5} = e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1) c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
+    fp12_pow(&fp12_tmp, ct1.c2, index, p);              // c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
+    fp12_mul(&c1_5, c1_5, fp12_tmp, p);                 // c_{1,5} = e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1) c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
 
     // δ_2 = Γ(c_{2,1}, c_{2,2}, c_{2,3}, c_{2,4})
     mpz_t delta2;mpz_init(delta2);
@@ -521,80 +527,98 @@ void Eval(struct Ciphertext ct, struct PubKey pk, struct HomKey hk, struct Ciphe
     struct fp12 c2_5;fp12_init(&c2_5);
     efp12_scm(&efp12_tmp, hk.rh4.h_w, delta2, p);       // h_{ω,4}^δ_2
     efp12_eca(&efp12_tmp, efp12_tmp, hk.rh3.h_w, p);    // h_{ω,3} + h_{ω,4}^δ_2
-    symmetric_miller(&c2_5, ct2.c1, efp12_tmp);             // e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2)
+    symmetric_miller(&c2_5, ct2.c1, efp12_tmp);         // e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2)
     mpz_mul(index, hk.rh4.r_w, delta2);                 // r_{ω,4}δ_2
     mpz_add(index, index, hk.rh3.r_w);                  // r_{ω,3}+r_{ω,4}δ_2
-    fp12_pow(&fp12_tmp, ct2.c2, index, p);                  // c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
-    fp12_mul(&c2_5, c2_5, fp12_tmp, p);                     // c_{2,5} = e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2) c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
-
+    fp12_pow(&fp12_tmp, ct2.c2, index, p);              // c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
+    fp12_mul(&c2_5, c2_5, fp12_tmp, p);                 // c_{2,5} = e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2) c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
 
     mpz_t tau_ch1;mpz_init(tau_ch1);
-    Function(tau_ch1, c1_5);                                // τ_ch1 ← F(c_{1,5})
+    Function(tau_ch1, c1_5);                            // τ_ch1 ← F(c_{1,5})
     mpz_t tau_ch2;mpz_init(tau_ch2);
-    Function(tau_ch2, c2_5);                                // τ_ch2 ← F(c_{2,5})
+    Function(tau_ch2, c2_5);                            // τ_ch2 ← F(c_{2,5})
     if(mpz_cmp(tau_ch1, ct1.tau) != 0 || mpz_cmp(tau_ch2, ct2.tau) != 0){
-        printf("Evaluation failed\n");
+        printf("EvaluationError\n");
     }
 
     else{
-
+        // シード設定
         gmp_randstate_t state;
         gmp_randinit_default(state);
         struct timeval tv;
         gettimeofday(&tv, NULL);
         usleep(100);
-        unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;  // ミリ秒単位のシード
+        unsigned long seed = tv.tv_sec * 1000 + tv.tv_usec / 1000;
         gmp_randseed_ui(state, seed);
+
+        struct Ciphertext ct_tmp;ct_init(&ct_tmp);
 
         // s ← Zr
         mpz_t s;mpz_init(s);
         mpz_urandomm(s, state, r);
 
         // c1 ← c_{1,1} c_{2,1} g_1^s g^{-sω}
-        mpz_sub_ui(index, p, 1);                // -1
-        efp12_scm(&ct.c1, pk.g1, index, p);     // g_1^{-1}
-        efp12_eca(&ct.c1, ct1.c1, hk.g, p);     // g_1^{-1} g^ω
-        mpz_neg(index, s);                      // -s
-        mpz_mod(index, index, p);               // -s mod p
-        efp12_scm(&ct.c1, ct.c1, index, p);     // g_1^s g^{-sω}
-        efp12_eca(&ct.c1, ct.c1, ct1.c1, p);    // c_{1,1} g_1^s g^{-sω}
-        efp12_eca(&ct.c1, ct.c1, ct2.c1, p);    // c_{1,1} c_{2,1} g_1^s g^{-sω}
+        efp12_set(&ct_tmp.c1, pk.g1);
+        fp12_neg(&ct_tmp.c1.y, ct_tmp.c1.y, p);         // g_1^{-1}
+        efp12_eca(&ct_tmp.c1, ct_tmp.c1, hk.g, p);      // g_1^{-1} g^ω
+        mpz_neg(index, s);                              // -s
+        mpz_mod(index, index, r);                       // -s mod r
+        efp12_scm(&ct_tmp.c1, ct_tmp.c1, index, p);     // g_1^s g^{-sω}
+        efp12_eca(&ct_tmp.c1, ct_tmp.c1, ct1.c1, p);    // c_{1,1} g_1^s g^{-sω}
+        efp12_eca(&ct_tmp.c1, ct_tmp.c1, ct2.c1, p);    // c_{1,1} c_{2,1} g_1^s g^{-sω}
 
         // c2 ← c_{1,2} c_{2,2} e(g,g)^s
-        symmetric_miller(&ct.c2, pk.g, pk.g);    // e(g,g)
-        fp12_pow(&ct.c2, ct.c2, s, p);            // e(g,g)^s
-        fp12_mul(&ct.c2, ct.c2, ct1.c2, p);       // c_{1,2} e(g,g)^s
-        fp12_mul(&ct.c2, ct.c2, ct2.c2, p);       // c_{1,2} c_{2,2} e(g,g)^s
+        symmetric_miller(&ct_tmp.c2, pk.g, pk.g);       // e(g,g)
+        fp12_pow(&ct_tmp.c2, ct_tmp.c2, s, p);          // e(g,g)^s
+        fp12_mul(&ct_tmp.c2, ct_tmp.c2, ct1.c2, p);     // c_{1,2} e(g,g)^s
+        fp12_mul(&ct_tmp.c2, ct_tmp.c2, ct2.c2, p);     // c_{1,2} c_{2,2} e(g,g)^s
 
         // c3 ← c_{1,3} c_{2,3} e(g,h_1)^{-s}
-        symmetric_miller(&ct.c3, pk.g, pk.h1);    // e(g,h_1)
-        mpz_neg(index, s);                        // -s
-        mpz_mod(index, index, p);                 // -s mod p
-        fp12_pow(&ct.c3, ct.c3, index, p);        // e(g,h_1)^{-s}
-        fp12_mul(&ct.c3, ct.c3, ct1.c3, p);       // c_{1,3} e(g,h_1)^{-s}
-        fp12_mul(&ct.c3, ct.c3, ct2.c3, p);       // c_{1,3} c_{2,3} e(g,h_1)^{-s}
+        symmetric_miller(&ct_tmp.c3, pk.g, pk.h1);      // e(g,h_1)
+        mpz_neg(index, s);                              // -s
+        mpz_mod(index, index, r);                       // -s mod r
+        fp12_pow(&ct_tmp.c3, ct_tmp.c3, index, p);      // e(g,h_1)^{-s}
+        fp12_mul(&ct_tmp.c3, ct_tmp.c3, ct1.c3, p);     // c_{1,3} e(g,h_1)^{-s}
+        fp12_mul(&ct_tmp.c3, ct_tmp.c3, ct2.c3, p);     // c_{1,3} c_{2,3} e(g,h_1)^{-s}
 
         // c4 ← c_{1,4} c_{2,4} e(g,h_2)^s
-        symmetric_miller(&ct.c4, pk.g, pk.h2);    // e(g,h_2)
-        fp12_pow(&ct.c4, ct.c4, s, p);            // e(g,h_2)^s
-        fp12_mul(&ct.c4, ct.c4, ct1.c4, p);       // c_{1,4} e(g,h_2)^s
-        fp12_mul(&ct.c4, ct.c4, ct2.c4, p);       // c_{1,4} c_{2,4} e(g,h_2)^s
+        symmetric_miller(&ct_tmp.c4, pk.g, pk.h2);      // e(g,h_2)
+        fp12_pow(&ct_tmp.c4, ct_tmp.c4, s, p);          // e(g,h_2)^s
+        fp12_mul(&ct_tmp.c4, ct_tmp.c4, ct1.c4, p);     // c_{1,4} e(g,h_2)^s
+        fp12_mul(&ct_tmp.c4, ct_tmp.c4, ct2.c4, p);     // c_{1,4} c_{2,4} e(g,h_2)^s
 
         // δ ← Γ(c1,c2,c3,c4)
         mpz_t delta;mpz_init(delta);
-        Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+        Gamma(delta, ct_tmp.c1, ct_tmp.c2, ct_tmp.c3, ct_tmp.c4, p);
         
         // c5 ← e(c1,h_{ω,3} h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
         struct fp12 c5;fp12_init(&c5);
-        efp12_scm(&efp12_tmp, hk.rh4.h_w, delta, p);        // h_{ω,4}^δ
-        efp12_eca(&efp12_tmp, hk.rh3.h_w, efp12_tmp, p);    // h_{ω,3) h_{ω,4}^δ
-        symmetric_miller(&fp12_tmp, ct.c1, efp12_tmp);          // e(c1,h_{ω,3} h_{ω,4}^δ)
-        mpz_mul(index, hk.rh4.r_w, delta);                  // r_{ω,4}δ
-        mpz_add(index, index, hk.rh3.r_w);                  // r_{ω,3}+r_{ω,4}δ
-        fp12_pow(&c5, ct.c2, index, p);                         // c2^{r_{ω,3}+r_{ω,4}δ}
+        efp12_scm(&efp12_tmp, hk.rh4.h_w, delta, p);            // h_{ω,4}^δ
+        efp12_eca(&efp12_tmp, hk.rh3.h_w, efp12_tmp, p);        // h_{ω,3) h_{ω,4}^δ
+        symmetric_miller(&fp12_tmp, ct_tmp.c1, efp12_tmp);      // e(c1,h_{ω,3} h_{ω,4}^δ)
+        mpz_mul(index, hk.rh4.r_w, delta);                      // r_{ω,4}δ
+        mpz_add(index, index, hk.rh3.r_w);                      // r_{ω,3}+r_{ω,4}δ
+        fp12_pow(&c5, ct_tmp.c2, index, p);                     // c2^{r_{ω,3}+r_{ω,4}δ}
         fp12_mul(&c5, fp12_tmp, c5, p);                         // c5 = e(c1,h_{ω,3} h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
 
-        Function(ct.tau, c5);                                   // τ ← F(c5)
+        Function(ct_tmp.tau, c5);                               // τ ← F(c5)
+
+        // 代入
+        efp12_set(&ct->c1, ct_tmp.c1);
+        fp12_set(&ct->c2, ct_tmp.c2);
+        fp12_set(&ct->c3, ct_tmp.c3);
+        fp12_set(&ct->c4, ct_tmp.c4);
+        mpz_set(ct->tau, ct_tmp.tau);
+
+        // 解放
+        mpz_clear(s);
+        ct_clear(&ct_tmp);
+        mpz_clear(delta);
+        fp12_clear(&c5);
+        gmp_randclear(state);
     }
 
+    mpz_clear(index);
+    fp12_clear(&fp12_tmp);
+    efp12_clear(&efp12_tmp);
 }
