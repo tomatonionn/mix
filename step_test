@@ -1,0 +1,398 @@
+void Test1(struct PubKey pk, struct HomKey hk, struct Ciphertext ct){
+    mpz_t z;mpz_t p;mpz_t r;mpz_t t;
+    mpz_inits(z, p, r, t, NULL);
+    gen_params(z, p, r, t);
+
+    // s ← Zr
+    mpz_t s;mpz_init(s);
+    mpz_set_str(s, "172217921829381869275269344655194779874402692183495419028727528508256608133202356664259899343", 10);
+
+    // δ ← Γ(c1,c2,c3,c4)
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+
+    mpz_t index;mpz_init(index);
+    struct fp12 e;fp12_init(&e);
+    struct fp12 e1;fp12_init(&e1);
+    struct fp12 e2;fp12_init(&e2);
+    struct fp12 e3;fp12_init(&e3);
+    struct fp12 e4;fp12_init(&e4);
+    struct fp12 C_2;fp12_init(&C_2);
+    mpz_t tau_ch;mpz_init(tau_ch);
+
+    // e1 : e(g,h3)^s
+    symmetric_miller(&e1, pk.g, pk.h3);
+    fp12_pow(&e1, e1, s, p);
+
+    // e2 : e(g,h4)^sδ
+    symmetric_miller(&e2, pk.g, pk.h4);
+    mpz_mul(index, s, delta);
+    fp12_pow(&e2, e2, index, p);
+
+    // e3 : e(g,g)^{-s r_{w,3}}
+    symmetric_miller(&e3, pk.g, pk.g);
+    mpz_mul(index, s, hk.rh3.r_w);
+    fp12_pow(&e3, e3, index, p);
+    fp12_inv(&e3, e3, p);
+
+    // e4 : e(g,g)^{-s r_{w,4} δ}    
+    symmetric_miller(&e4, pk.g, pk.g);
+    mpz_mul(index, s, hk.rh4.r_w);
+    mpz_mul(index, index, delta);
+    fp12_pow(&e4, e4, index, p);
+    fp12_inv(&e4, e4, p);
+
+    // C_2 : C2^{r_{w,3}+r_{w,4}δ}
+    mpz_mul(index, hk.rh4.r_w, delta);
+    mpz_add(index, index, hk.rh3.r_w);
+    fp12_pow(&C_2, ct.c2, index, p);
+
+    fp12_mul(&e, e1, e2, p);
+    fp12_mul(&e, e, e3, p);
+    fp12_mul(&e, e, e4, p);
+    fp12_mul(&e, e, C_2, p);
+
+    Function(tau_ch, e);
+
+    Function(tau_ch, e);
+    gmp_printf("tau_ch : %Zd\n", tau_ch);
+
+    if(mpz_cmp(ct.tau, tau_ch) == 0){
+        printf("Test1 : Good\n");
+        return;
+    }
+    else{
+        printf("Test1 : Bad\n");
+        return;
+    }
+}
+
+void Test2(struct PubKey pk, struct SecKey sk, struct HomKey hk, struct Ciphertext ct){
+    mpz_t z;mpz_t p;mpz_t r;mpz_t t;
+    mpz_inits(z, p, r, t, NULL);
+    gen_params(z, p, r, t);
+
+    // s ← Zr
+    mpz_t s;mpz_init(s);
+    mpz_set_str(s, "172217921829381869275269344655194779874402692183495419028727528508256608133202356664259899343", 10);
+
+    // ω
+    mpz_t omega;mpz_init(omega);
+    mpz_set_str(omega, "521282713227754097959563959285525806746935029964650729225545594313289178714405753307885640846", 10);
+
+    // δ ← Γ(c1,c2,c3,c4)
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+
+    mpz_t index;mpz_init(index);
+    struct efp12 efp12_tmp1;efp12_init(&efp12_tmp1);
+    struct efp12 efp12_tmp2;efp12_init(&efp12_tmp2);
+    struct fp12 e;fp12_init(&e);
+    struct fp12 e1;fp12_init(&e1);
+    struct fp12 e2;fp12_init(&e2);
+    struct fp12 e3;fp12_init(&e3);
+    struct fp12 e4;fp12_init(&e4);
+    struct fp12 C_2;fp12_init(&C_2);
+    mpz_t tau_ch;mpz_init(tau_ch);
+
+    // e1 : e(g^{(α-w)s},h3^{1/α-w})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    efp12_scm(&efp12_tmp2, pk.h3, index, p);    // h3^{1/α-w}
+    symmetric_miller(&e1, efp12_tmp1, efp12_tmp2);
+
+    // e2 : e(g^{(α-w)s},h4^{δ(1/α-w)})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    mpz_mul(index, index, delta);
+    efp12_scm(&efp12_tmp2, pk.h4, index, p);    // h4^{δ(1/α-w)}
+    symmetric_miller(&e2, efp12_tmp1, efp12_tmp2);
+
+    // e3 : e(g^{(α-w)s},g^{-r_{w,3}/α-w})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    mpz_mul(index, index, hk.rh3.r_w);
+    mpz_neg(index, index);
+    mpz_mod(index, index, r);
+    efp12_scm(&efp12_tmp2, pk.g, index, p);
+    symmetric_miller(&e3, efp12_tmp1, efp12_tmp2);
+
+
+    // e4 : e(g^{(α-w)s},g^{-r_{w,4}δ/α-w})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    mpz_mul(index, index, hk.rh4.r_w);
+    mpz_mul(index, index, delta);
+    efp12_scm(&efp12_tmp2, pk.g, index, p);
+    fp12_neg(&efp12_tmp2.y, efp12_tmp2.y, p);
+    symmetric_miller(&e4, efp12_tmp1, efp12_tmp2);
+
+    // C_2 : C2^{r_{w,3}+r_{w,4}δ}
+    mpz_mul(index, hk.rh4.r_w, delta);
+    mpz_add(index, index, hk.rh3.r_w);
+    fp12_pow(&C_2, ct.c2, index, p);
+
+    fp12_mul(&e, e1, e2, p);
+    fp12_mul(&e, e, e3, p);
+    fp12_mul(&e, e, e4, p);
+    fp12_mul(&e, e, C_2, p);
+
+    Function(tau_ch, e);
+
+    Function(tau_ch, e);
+    gmp_printf("tau_ch : %Zd\n", tau_ch);
+
+    if(mpz_cmp(ct.tau, tau_ch) == 0){
+        printf("Test2 : Good\n");
+        return;
+    }
+    else{
+        printf("Test2 : Bad\n");
+        return;
+    }
+}
+
+void Test3(struct PubKey pk, struct SecKey sk, struct HomKey hk, struct Ciphertext ct){
+    mpz_t z;mpz_t p;mpz_t r;mpz_t t;
+    mpz_inits(z, p, r, t, NULL);
+    gen_params(z, p, r, t);
+
+    // s ← Zr
+    mpz_t s;mpz_init(s);
+    mpz_set_str(s, "172217921829381869275269344655194779874402692183495419028727528508256608133202356664259899343", 10);
+
+    // ω
+    mpz_t omega;mpz_init(omega);
+    mpz_set_str(omega, "521282713227754097959563959285525806746935029964650729225545594313289178714405753307885640846", 10);
+
+    // δ ← Γ(c1,c2,c3,c4)
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+
+    mpz_t index;mpz_init(index);
+    struct efp12 efp12_tmp1;efp12_init(&efp12_tmp1);
+    struct efp12 efp12_tmp2;efp12_init(&efp12_tmp2);
+    struct fp12 e;fp12_init(&e);
+    struct fp12 e1;fp12_init(&e1);
+    struct fp12 e2;fp12_init(&e2);
+    struct fp12 C_2;fp12_init(&C_2);
+    mpz_t tau_ch;mpz_init(tau_ch);
+
+    // e1 : e(g^{(α-w)s},(h3 g^{-r_{w,3}})^{1/(α-w)})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+    mpz_neg(index, hk.rh3.r_w);
+    mpz_mod(index, index, r);
+    efp12_scm(&efp12_tmp2, pk.g, index, p);     // g^{-r_{w,3}}
+    efp12_eca(&efp12_tmp2, pk.h3, efp12_tmp2, p);   // h3 g^{-r_{w,3}}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    efp12_scm(&efp12_tmp2, efp12_tmp2, index, p);    // (h3 g^{-r_{w,3}})^{1/(α-w)}
+    symmetric_miller(&e1, efp12_tmp1, efp12_tmp2);
+
+    // e2 : e(g^{(α-w)s},(h4 g^{-r_{w,4}})^{δ/(α-w)})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+    mpz_neg(index, hk.rh4.r_w);
+    mpz_mod(index, index, r);
+    efp12_scm(&efp12_tmp2, pk.g, index, p);     // g^{-r_{w,4}}
+    efp12_eca(&efp12_tmp2, pk.h4, efp12_tmp2, p);   // h4 g^{-r_{w,4}}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    mpz_mul(index, index, delta);
+    efp12_scm(&efp12_tmp2, efp12_tmp2, index, p);    // (h4 g^{-r_{w,4}})^{δ/(α-w)}
+    symmetric_miller(&e2, efp12_tmp1, efp12_tmp2);
+
+    // C_2 : C2^{r_{w,3}+r_{w,4}δ}
+    mpz_mul(index, hk.rh4.r_w, delta);
+    mpz_add(index, index, hk.rh3.r_w);
+    fp12_pow(&C_2, ct.c2, index, p);
+
+    fp12_mul(&e, e1, e2, p);
+    fp12_mul(&e, e, C_2, p);
+
+    Function(tau_ch, e);
+
+    Function(tau_ch, e);
+    gmp_printf("tau_ch : %Zd\n", tau_ch);
+
+    if(mpz_cmp(ct.tau, tau_ch) == 0){
+        printf("Test3 : Good\n");
+        return;
+    }
+    else{
+        printf("Test3 : Bad\n");
+        return;
+    }
+}
+
+void Test4(struct PubKey pk, struct SecKey sk, struct HomKey hk, struct Ciphertext ct){
+    mpz_t z;mpz_t p;mpz_t r;mpz_t t;
+    mpz_inits(z, p, r, t, NULL);
+    gen_params(z, p, r, t);
+
+    // s ← Zr
+    mpz_t s;mpz_init(s);
+    mpz_set_str(s, "172217921829381869275269344655194779874402692183495419028727528508256608133202356664259899343", 10);
+
+    // ω
+    mpz_t omega;mpz_init(omega);
+    mpz_set_str(omega, "521282713227754097959563959285525806746935029964650729225545594313289178714405753307885640846", 10);
+
+    // δ ← Γ(c1,c2,c3,c4)
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+
+    mpz_t index;mpz_init(index);
+    struct efp12 efp12_tmp1;efp12_init(&efp12_tmp1);
+    struct efp12 efp12_tmp2;efp12_init(&efp12_tmp2);
+    struct efp12 efp12_tmp3;efp12_init(&efp12_tmp3);
+    struct fp12 e;fp12_init(&e);
+    struct fp12 C_2;fp12_init(&C_2);
+    mpz_t tau_ch;mpz_init(tau_ch);
+
+    // e : e(g^{(α-w)s},(h3 g^{-r_{w,3}})^{1/(α-w)} (h4 g^{-r_{w,4}})^{δ/(α-w)})
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_mul(index, index, s);
+    efp12_scm(&efp12_tmp1, pk.g, index, p);     // g^{(α-w)s}
+
+    mpz_neg(index, hk.rh3.r_w);
+    mpz_mod(index, index, r);
+    efp12_scm(&efp12_tmp2, pk.g, index, p);     // g^{-r_{w,3}}
+    efp12_eca(&efp12_tmp2, pk.h3, efp12_tmp2, p);   // h3 g^{-r_{w,3}}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    efp12_scm(&efp12_tmp2, efp12_tmp2, index, p);    // (h3 g^{-r_{w,3}})^{1/(α-w)}
+
+    mpz_neg(index, hk.rh4.r_w);
+    mpz_mod(index, index, r);
+    efp12_scm(&efp12_tmp3, pk.g, index, p);     // g^{-r_{w,4}}
+    efp12_eca(&efp12_tmp3, pk.h4, efp12_tmp3, p);   // h4 g^{-r_{w,4}}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    mpz_mul(index, index, delta);
+    efp12_scm(&efp12_tmp3, efp12_tmp3, index, p);    // (h4 g^{-r_{w,4}})^{δ/(α-w)}
+
+    efp12_eca(&efp12_tmp2, efp12_tmp2, efp12_tmp3, p);   // (h3 g^{-r_{w,3}})^{1/(α-w)} (h4 g^{-r_{w,4}})^{δ/(α-w)}
+
+    symmetric_miller(&e, efp12_tmp1, efp12_tmp2);
+
+
+    // C_2 : C2^{r_{w,3}+r_{w,4}δ}
+    mpz_mul(index, hk.rh4.r_w, delta);
+    mpz_add(index, index, hk.rh3.r_w);
+    fp12_pow(&C_2, ct.c2, index, p);
+
+    fp12_mul(&e, e, C_2, p);
+
+    Function(tau_ch, e);
+
+    Function(tau_ch, e);
+    gmp_printf("tau_ch : %Zd\n", tau_ch);
+
+    if(mpz_cmp(ct.tau, tau_ch) == 0){
+        printf("Test4 : Good\n");
+        return;
+    }
+    else{
+        printf("Test4 : Bad\n");
+        return;
+    }
+}
+
+void Test5(struct PubKey pk, struct SecKey sk, struct HomKey hk, struct Ciphertext ct){
+    mpz_t z;mpz_t p;mpz_t r;mpz_t t;
+    mpz_inits(z, p, r, t, NULL);
+    gen_params(z, p, r, t);
+
+    // s ← Zr
+    mpz_t s;mpz_init(s);
+    mpz_set_str(s, "172217921829381869275269344655194779874402692183495419028727528508256608133202356664259899343", 10);
+
+    // ω
+    mpz_t omega;mpz_init(omega);
+    mpz_set_str(omega, "521282713227754097959563959285525806746935029964650729225545594313289178714405753307885640846", 10);
+
+    // δ ← Γ(c1,c2,c3,c4)
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4, p);
+
+    mpz_t index;mpz_init(index);
+    struct efp12 efp12_tmp1;efp12_init(&efp12_tmp1);
+    struct efp12 efp12_tmp2;efp12_init(&efp12_tmp2);
+    struct efp12 efp12_tmp3;efp12_init(&efp12_tmp3);
+    struct fp12 e;fp12_init(&e);
+    struct fp12 C_2;fp12_init(&C_2);
+    mpz_t tau_ch;mpz_init(tau_ch);
+
+    // e : e(C1,h_{w,3} h_{w,4}^δ)
+    efp12_set(&efp12_tmp1, ct.c1);
+
+    efp12_set(&efp12_tmp2, hk.rh3.h_w);
+
+    mpz_neg(index, hk.rh4.r_w);
+    mpz_mod(index, index, r);
+    efp12_scm(&efp12_tmp3, pk.g, index, p);     // g^{-r_{w,4}}
+    efp12_eca(&efp12_tmp3, pk.h4, efp12_tmp3, p);   // h4 g^{-r_{w,4}}
+    mpz_sub(index, sk.alpha, omega);
+    mpz_mod(index, index, r);
+    mpz_invert(index, index, r);
+    efp12_scm(&efp12_tmp3, efp12_tmp3, index, p);    // (h4 g^{-r_{w,4}})^{1/(α-w)}
+    // efp12_set(&efp12_tmp3, hk.rh4.h_w);
+    efp12_scm(&efp12_tmp3, efp12_tmp3, delta, p);    // (h4 g^{-r_{w,4}})^{δ/(α-w)}
+
+    efp12_eca(&efp12_tmp2, efp12_tmp2, efp12_tmp3, p);   // (h3 g^{-r_{w,3}})^{1/(α-w)} (h4 g^{-r_{w,4}})^{δ/(α-w)}
+    
+    symmetric_miller(&e, efp12_tmp1, efp12_tmp2);
+
+
+    // C_2 : C2^{r_{w,3}+r_{w,4}δ}
+    mpz_mul(index, hk.rh4.r_w, delta);
+    mpz_add(index, index, hk.rh3.r_w);
+    fp12_pow(&C_2, ct.c2, index, p);
+
+    fp12_mul(&e, e, C_2, p);
+
+    Function(tau_ch, e);
+
+    Function(tau_ch, e);
+    gmp_printf("tau_ch : %Zd\n", tau_ch);
+
+    if(mpz_cmp(ct.tau, tau_ch) == 0){
+        printf("Test5 : Good\n");
+        return;
+    }
+    else{
+        printf("Test5 : Bad\n");
+        return;
+    }
+}
