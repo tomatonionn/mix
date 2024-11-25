@@ -499,7 +499,7 @@ void Dec(struct fp12 *M, struct PubKey pk, struct SecKey sk, mpz_t omega, struct
 
 }
 
-void Eval(struct Ciphertext *ct, struct PubKey pk, struct HomKey hk, struct Ciphertext ct1, struct Ciphertext ct2, mpz_t p, mpz_t r){
+void Eval_mul(struct Ciphertext *ct, struct PubKey pk, struct HomKey hk, struct Ciphertext ct1, struct Ciphertext ct2, mpz_t p, mpz_t r){
     
     mpz_t index;mpz_init(index);
     struct fp12 fp12_tmp;fp12_init(&fp12_tmp);
