@@ -163,7 +163,7 @@ void ct_init(Ciphertext *ct){
 }
 
 // モンゴメリ記法
-void symmetric_miller(fp12_t *e, efp12_t P, efp12_t Q){
+void symmetric_paring(fp12_t *e, efp12_t P, efp12_t Q){
     efp12_t P_tmp;efp12_init(&P_tmp);
     efp12_t Q_tmp;efp12_init(&Q_tmp);
     fp12_t e_tmp;fp12_init(&e_tmp);
@@ -332,19 +332,19 @@ void Enc(Ciphertext *ct, PubKey pk, fp12_t M, mpz_t omega){
     efp12_eca(&ct_tmp.c1, &ct_tmp.c1, &efp12_tmp);      // c1 = g1^s + g^{-sω}
 
     // c2 ← e(g,g)^s
-    symmetric_miller(&ct_tmp.c2, pk.g, pk.g);           // e(g,g)
+    symmetric_paring(&ct_tmp.c2, pk.g, pk.g);           // e(g,g)
     fp12_mod_montgomery(&ct_tmp.c2, &ct_tmp.c2);
     fp12_pow(&ct_tmp.c2, &ct_tmp.c2, s);                // c2 = e(g,g)^s
 
     // c3 ← M・e(g,h1)^-s
-    symmetric_miller(&ct_tmp.c3, pk.g, pk.h1);          // e(g,h1)
+    symmetric_paring(&ct_tmp.c3, pk.g, pk.h1);          // e(g,h1)
     fp12_mod_montgomery(&ct_tmp.c3, &ct_tmp.c3);
     fp12_pow(&ct_tmp.c3, &ct_tmp.c3, s);                // e(g,h1)^s
     fp12_inv(&ct_tmp.c3, &ct_tmp.c3);                   // e(g,h1)^-s
     fp12_mul(&ct_tmp.c3, &ct_tmp.c3, &M);               // c3 = M・e(g,h1)^-s
 
     // c4 ← e(g,h2)^s
-    symmetric_miller(&ct_tmp.c4, pk.g, pk.h2);          // e(g,h2)
+    symmetric_paring(&ct_tmp.c4, pk.g, pk.h2);          // e(g,h2)
     fp12_mod_montgomery(&ct_tmp.c4, &ct_tmp.c4);
     fp12_pow(&ct_tmp.c4, &ct_tmp.c4, s);                // c4 = e(g,h2)^s
 
@@ -353,10 +353,10 @@ void Enc(Ciphertext *ct, PubKey pk, fp12_t M, mpz_t omega){
 
     // c5 ← e(g,h3)^s e(g,h4)^sδ
     fp12_t c5;fp12_init(&c5);
-    symmetric_miller(&fp12_tmp, pk.g, pk.h3);           // e(g,h3)
+    symmetric_paring(&fp12_tmp, pk.g, pk.h3);           // e(g,h3)
     fp12_mod_montgomery(&fp12_tmp, &fp12_tmp);
     fp12_pow(&fp12_tmp, &fp12_tmp, s);                  // e(g,h3)^s
-    symmetric_miller(&c5, pk.g, pk.h4);                 // e(g,h4)
+    symmetric_paring(&c5, pk.g, pk.h4);                 // e(g,h4)
     fp12_mod_montgomery(&c5, &c5);
     mpz_mul(index, s, delta);                           // sδ
     fp12_pow(&c5, &c5, index);                          // e(g,h4)^sδ
@@ -395,7 +395,7 @@ int Test(PubKey pk, HomKey hk, Ciphertext ct){
     mpz_t tau_ch;mpz_init(tau_ch);
     efp12_scm(&efp12_tmp, &hk.rh4.h_w, delta);          // h_{ω,4}^δ
     efp12_eca(&efp12_tmp, &hk.rh3.h_w, &efp12_tmp);     // h_{ω,3) h_{ω,4}^δ
-    symmetric_miller(&fp12_tmp1, ct.c1, efp12_tmp);     // e(c1,h_{ω,3) h_{ω,4}^δ)
+    symmetric_paring(&fp12_tmp1, ct.c1, efp12_tmp);     // e(c1,h_{ω,3) h_{ω,4}^δ)
     fp12_mod_montgomery(&fp12_tmp1, &fp12_tmp1);
     mpz_mul(index, hk.rh4.r_w, delta);                  // r_{ω,4}δ
     mpz_add(index, index, hk.rh3.r_w);                  // r_{ω,3}+r_{ω,4}δ
@@ -480,7 +480,7 @@ void Dec(fp12_t *M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
 
     // c4' ← e(c1,h_{ω,2}) c2^{r_{ω,2}}
     fp12_t c4_prime;fp12_init(&c4_prime);
-    symmetric_miller(&c4_prime, ct.c1, h_w2);           // e(c1,h_{ω,2})
+    symmetric_paring(&c4_prime, ct.c1, h_w2);           // e(c1,h_{ω,2})
     fp12_mod_montgomery(&c4_prime, &c4_prime);
     fp12_pow(&fp12_tmp, &ct.c2, r_w2);                  // c2^{r_{ω,2}}
     fp12_mul(&c4_prime, &c4_prime, &fp12_tmp);          // e(c1,h_{ω,2}) c2^{r_{ω,2}}
@@ -489,7 +489,7 @@ void Dec(fp12_t *M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
     fp12_t c5;fp12_init(&c5);
     efp12_scm(&efp12_tmp, &h_w4, delta);                // h_{ω,4}^δ
     efp12_eca(&efp12_tmp, &h_w3, &efp12_tmp);           // h_{ω,3) h_{ω,4}^δ
-    symmetric_miller(&fp12_tmp, ct.c1, efp12_tmp);      // e(c1,h_{ω,3) h_{ω,4}^δ)
+    symmetric_paring(&fp12_tmp, ct.c1, efp12_tmp);      // e(c1,h_{ω,3) h_{ω,4}^δ)
     fp12_mod_montgomery(&fp12_tmp, &fp12_tmp);
     mpz_mul(index, r_w4, delta);                        // r_{ω,4}δ
     mpz_add(index, index, r_w3);                        // r_{ω,3}+r_{ω,4}δ
@@ -513,7 +513,7 @@ void Dec(fp12_t *M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
 
     else{
         // M ← c3 e(c1,h_{ω,1}) c2^{r_{ω,1}}
-        symmetric_miller(&fp12_tmp, ct.c1, h_w1);       // e(c1,h_{ω,1})
+        symmetric_paring(&fp12_tmp, ct.c1, h_w1);       // e(c1,h_{ω,1})
         fp12_mod_montgomery(&fp12_tmp, &fp12_tmp);
         fp12_mul(&M_tmp, &ct.c3, &fp12_tmp);            // c3 e(c1,h_{ω,1})
         fp12_pow(&fp12_tmp, &ct.c2, r_w1);              // c2^{r_{ω,1}}
@@ -546,7 +546,7 @@ void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2){
     fp12_t c1_5;fp12_init(&c1_5);
     efp12_scm(&efp12_tmp, &hk.rh4.h_w, delta1);         // h_{ω,4}^δ_1
     efp12_eca(&efp12_tmp, &efp12_tmp, &hk.rh3.h_w);     // h_{ω,3} + h_{ω,4}^δ_1
-    symmetric_miller(&c1_5, ct1.c1, efp12_tmp);         // e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1)
+    symmetric_paring(&c1_5, ct1.c1, efp12_tmp);         // e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1)
     fp12_mod_montgomery(&c1_5, &c1_5);
     mpz_mul(index, hk.rh4.r_w, delta1);                 // r_{ω,4}δ_1
     mpz_add(index, index, hk.rh3.r_w);                  // r_{ω,3}+r_{ω,4}δ_1
@@ -561,7 +561,7 @@ void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2){
     fp12_t c2_5;fp12_init(&c2_5);
     efp12_scm(&efp12_tmp, &hk.rh4.h_w, delta2);       // h_{ω,4}^δ_2
     efp12_eca(&efp12_tmp, &efp12_tmp, &hk.rh3.h_w);    // h_{ω,3} + h_{ω,4}^δ_2
-    symmetric_miller(&c2_5, ct2.c1, efp12_tmp);         // e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2)
+    symmetric_paring(&c2_5, ct2.c1, efp12_tmp);         // e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2)
     fp12_mod_montgomery(&c2_5, &c2_5);
     mpz_mul(index, hk.rh4.r_w, delta2);                 // r_{ω,4}δ_2
     mpz_add(index, index, hk.rh3.r_w);                  // r_{ω,3}+r_{ω,4}δ_2
@@ -594,14 +594,14 @@ void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2){
         efp12_eca(&ct_tmp.c1, &ct_tmp.c1, &ct2.c1);    // c_{1,1} c_{2,1} g_1^s g^{-sω}
 
         // c2 ← c_{1,2} c_{2,2} e(g,g)^s
-        symmetric_miller(&ct_tmp.c2, pk.g, pk.g);       // e(g,g)
+        symmetric_paring(&ct_tmp.c2, pk.g, pk.g);       // e(g,g)
         fp12_mod_montgomery(&ct_tmp.c2, &ct_tmp.c2);
         fp12_pow(&ct_tmp.c2, &ct_tmp.c2, s);          // e(g,g)^s
         fp12_mul(&ct_tmp.c2, &ct_tmp.c2, &ct1.c2);     // c_{1,2} e(g,g)^s
         fp12_mul(&ct_tmp.c2, &ct_tmp.c2, &ct2.c2);     // c_{1,2} c_{2,2} e(g,g)^s
 
         // c3 ← c_{1,3} c_{2,3} e(g,h_1)^{-s}
-        symmetric_miller(&ct_tmp.c3, pk.g, pk.h1);      // e(g,h_1)
+        symmetric_paring(&ct_tmp.c3, pk.g, pk.h1);      // e(g,h_1)
         fp12_mod_montgomery(&ct_tmp.c3, &ct_tmp.c3);
         mpz_neg(index, s);                              // -s
         mpz_mod(index, index, order_z);                       // -s mod r
@@ -610,7 +610,7 @@ void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2){
         fp12_mul(&ct_tmp.c3, &ct_tmp.c3, &ct2.c3);     // c_{1,3} c_{2,3} e(g,h_1)^{-s}
 
         // c4 ← c_{1,4} c_{2,4} e(g,h_2)^s
-        symmetric_miller(&ct_tmp.c4, pk.g, pk.h2);      // e(g,h_2)
+        symmetric_paring(&ct_tmp.c4, pk.g, pk.h2);      // e(g,h_2)
         fp12_mod_montgomery(&ct_tmp.c4, &ct_tmp.c4);
         fp12_pow(&ct_tmp.c4, &ct_tmp.c4, s);          // e(g,h_2)^s
         fp12_mul(&ct_tmp.c4, &ct_tmp.c4, &ct1.c4);     // c_{1,4} e(g,h_2)^s
@@ -624,7 +624,7 @@ void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2){
         fp12_t c5;fp12_init(&c5);
         efp12_scm(&efp12_tmp, &hk.rh4.h_w, delta);            // h_{ω,4}^δ
         efp12_eca(&efp12_tmp, &hk.rh3.h_w, &efp12_tmp);        // h_{ω,3) h_{ω,4}^δ
-        symmetric_miller(&fp12_tmp, ct_tmp.c1, efp12_tmp);      // e(c1,h_{ω,3} h_{ω,4}^δ)
+        symmetric_paring(&fp12_tmp, ct_tmp.c1, efp12_tmp);      // e(c1,h_{ω,3} h_{ω,4}^δ)
         fp12_mod_montgomery(&fp12_tmp, &fp12_tmp);
         mpz_mul(index, hk.rh4.r_w, delta);                      // r_{ω,4}δ
         mpz_add(index, index, hk.rh3.r_w);                      // r_{ω,3}+r_{ω,4}δ
@@ -701,6 +701,7 @@ int main (){
     printf("\n");
 
 
+
     // Homomorphic Key Generate
     printf("Homomorphic Key = (g^ω, (r_{ω,3}, h_{ω,3}), (r_{ω,4}, h_{ω,4}))\n");
     HomKey hk;hk_init(&hk);
@@ -765,7 +766,7 @@ int main (){
     fp12_println("c2_2 : ", &ct2.c2);
     fp12_println("c2_3 : ", &ct2.c3);
     fp12_println("c2_4 : ", &ct2.c4);
-    gmp_printf("τ2 : %Zd\n", ct.tau);
+    gmp_printf("τ2 : %Zd\n", ct2.tau);
     printf("\n");
 
     Ciphertext ct_mul;ct_init(&ct_mul);
@@ -790,4 +791,89 @@ int main (){
     fp12_t M3;fp12_init(&M3);
     fp12_mul(&M3, &M, &M2);
     fp12_println("M3 : ", &M3);
+
+
+    // 時間測定
+    struct timespec ts;
+    struct tm tm;
+    long double start_sec, start_nsec, end_sec, end_nsec, exe_time_buf0;
+    int loop = 100;
+
+    // // KeyGen
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     KeyGen(&pk, &sk);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("Execution time for KeyGen!! : %Lf[ms]\n", exe_time_buf0);
+
+    // // HomKeyGen
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     HomKeyGen(&hk, pk, sk, omega);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("Execution time for HomKeyGen!! : %Lf[ms]\n", exe_time_buf0);
+
+    // // Enc
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     Enc(&ct, pk, M, omega);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("Execution time for Enc!! : %Lf[ms]\n", exe_time_buf0);
+
+    // // Dec
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     Dec(&M, pk, sk, omega, ct);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("Execution time for Dec!! : %Lf[ms]\n", exe_time_buf0);
+
+    // // Test
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     Test(pk, hk, ct);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("Execution time for Test!! : %Lf[ms]\n", exe_time_buf0);
+
+    // // Eval
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     Eval(&ct_mul, pk, hk, ct, ct2);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("Execution time for Eval!! : %Lf[ms]\n", exe_time_buf0);
 }
