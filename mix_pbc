@@ -1,0 +1,143 @@
+// Boneh-Lynn-Shacham short signatures demo.
+//
+// See the PBC_sig library for a practical implementation.
+//
+// Ben Lynn
+#include <pbc.h>
+#include <pbc_test.h>
+
+typedef struct{
+    element_t g;
+    element_t g1;
+    element_t h1;
+    element_t h2;
+    element_t h3;
+    element_t h4;
+    // hk <- SHA-512
+    // f
+}PubKey;
+
+
+typedef struct{
+    element_t alpha;
+}SecKey;
+
+
+typedef struct{
+
+}Ran_Hash;
+
+
+typedef struct{
+
+}HomKey;
+
+
+typedef struct{
+
+}Ciphertext;
+
+
+typedef struct{
+
+}PreValue;
+
+
+void pk_init(PubKey *pk){
+
+}
+
+
+void sk_init(SecKey *sk){
+
+}
+
+
+void hk_init(HomKey *hk){
+
+}
+
+
+void ct_init(Ciphertext *ct){
+
+}
+
+
+void pv_init(PreValue *pv){
+
+}
+
+
+// ANS = [scalar1]P + [scalar2]Q
+void Multi_scm(efp12_t *ANS, efp12_t *P, mpz_t scalarP, efp12_t *Q, mpz_t scalarQ){
+
+}
+
+
+void Gamma(mpz_t gamma, efp12_t c1, fp12_t c2, fp12_t c3, fp12_t c4){
+
+}
+
+
+void Function(mpz_t function, fp12_t c5){
+
+}
+
+
+void symmetric_paring(fp12_t *e, efp12_t P, efp12_t Q){
+
+}
+
+
+void G_random(efp12_t *R, efp_t gen1, efp2_t gen2){
+
+}
+
+
+void KeyGen(PubKey pk, SecKey sk, char **argv){
+    pairing_t pairing;
+    pairing_init_set_str(pairing, argv);
+    element_init_G1(pk.g, pairing);
+    element_init_G1(pk.h1, pairing);
+    element_init_G1(pk.h2, pairing);
+    element_init_G1(pk.h3, pairing);
+    element_init_G1(pk.h4, pairing);
+    element_random(sk.alpha);
+    element_mul(pk.g1, pk.g, sk.alpha);
+}
+
+
+void PreCal(PreValue *pv, PubKey pk){
+
+}
+
+
+void HomKeyGen(HomKey *hk, PubKey pk, SecKey sk, mpz_t omega){
+
+}
+
+
+void Enc(Ciphertext *ct, PubKey pk, fp12_t M, mpz_t omega, PreValue pv){
+
+}
+
+
+int Test(PubKey pk, HomKey hk, Ciphertext ct){
+
+}
+
+
+void Dec(fp12_t *M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
+
+}
+
+
+void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2, PreValue pv){
+
+}
+
+
+int main(int argc, char **argv) {
+
+  return 0;
+}
