@@ -24,12 +24,11 @@ typedef struct{
 
 
 typedef struct{
-
-}Ran_Hash;
-
-
-typedef struct{
-
+    element_t rw3;
+    element_t rw4;
+    element_t hw3;
+    element_t hw4;
+    element_t gw;
 }HomKey;
 
 
@@ -112,8 +111,23 @@ void PreCal(PreValue *pv, PubKey pk){
 }
 
 
-void HomKeyGen(HomKey *hk, PubKey pk, SecKey sk, mpz_t omega){
+void HomKeyGen(HomKey hk, PubKey pk, SecKey sk, element_t omega){
+    element_t index;
+    
+    element_random(hk.rw3);
+    element_random(hk.rw4);
 
+    element_mul(hk.hw3, pk.g, hk.rw3);
+    element_add(hk.hw3, hk.hw3, pk.h3);
+    element_sub(index, sk.alpha, omega);
+    element_invert(index, index);
+    element_mul(hk.hw3, hk.hw3, index);
+
+    element_mul(hk.hw4, pk.g, hk.rw4);
+    element_add(hk.hw4, hk.hw4, pk.h4);
+    element_mul(hk.hw4, hk.hw4, index);
+
+    element_mul(hk.gw, pk.g, omega);
 }
 
 
