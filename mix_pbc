@@ -5,6 +5,8 @@
 // Ben Lynn
 #include <pbc.h>
 #include <pbc_test.h>
+#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 typedef struct{
     element_t g;    // efp
@@ -50,61 +52,115 @@ typedef struct{
 }PreValue;
 
 
-// ANS = [scalar1]P + [scalar2]Q
-void Multi_scm(efp12_t *ANS, efp12_t *P, mpz_t scalarP, efp12_t *Q, mpz_t scalarQ){
-
-}
-
-
 void Gamma(element_t gamma, element_t c1, element_t c2, element_t c3, element_t c4){
+    mpz_t c1_mpz, c2_mpz, c3_mpz, c4_mpz, sum, gamma_mpz;
+    mpz_inits(c1_mpz, c2_mpz, c3_mpz, c4_mpz, sum, gamma_mpz, NULL);
 
+    element_to_mpz(c1_mpz, c1);
+    element_to_mpz(c2_mpz, c2);
+    element_to_mpz(c3_mpz, c3);
+    element_to_mpz(c4_mpz, c4);
+
+    mpz_add(sum, c1_mpz, c2_mpz);
+    mpz_add(sum, sum, c3_mpz);
+    mpz_add(sum, sum, c4_mpz);
+
+    size_t sum_len = (mpz_sizeinbase(sum, 2) + 7) / 8; // バイト数を計算
+    unsigned char *sum_bytes = (unsigned char *)malloc(sum_len);
+    mpz_export(sum_bytes, NULL, 1, 1, 0, 0, sum);
+
+    unsigned char char_gamma[EVP_MAX_MD_SIZE];
+    EVP_MD_CTX *mdctx;
+    const EVP_MD *md;
+    unsigned int md_len;
+    md = EVP_sha512();
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, md, NULL);
+    EVP_DigestUpdate(mdctx, sum_bytes, sum_len);
+    EVP_DigestFinal_ex(mdctx, char_gamma, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    mpz_import(gamma_mpz, SHA512_DIGEST_LENGTH, 1, 1, 0, 0, char_gamma);
+
+    element_set_mpz(gamma, gamma_mpz);
+
+    mpz_clears(c1_mpz, c2_mpz, c3_mpz, c4_mpz, sum, gamma_mpz, NULL);
+    free(sum_bytes);
 }
 
 
-void Function(mpz_t function, element_t c5){
+void Function(element_t function, element_t c5){
+    mpz_t sum, function_mpz;
+    mpz_inits(sum, function_mpz, NULL);
 
+    element_to_mpz(sum, c5);
+
+    size_t c_sum_len = (mpz_sizeinbase(sum, 2) + 7) / 8; // バイト数を計算
+    unsigned char *c_sum_bytes = (unsigned char *)malloc(c_sum_len);
+    mpz_export(c_sum_bytes, NULL, 1, 1, 0, 0, sum);
+
+    unsigned char char_function[EVP_MAX_MD_SIZE];
+    EVP_MD_CTX *mdctx;
+    const EVP_MD *md;
+    unsigned int md_len;
+    md = EVP_sha512();
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, md, NULL);
+    EVP_DigestUpdate(mdctx, c_sum_bytes, c_sum_len);
+    EVP_DigestFinal_ex(mdctx, char_function, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    mpz_import(function_mpz, SHA512_DIGEST_LENGTH, 1, 1, 0, 0, char_function);
+
+    element_set_mpz(function, function_mpz);
+
+    mpz_clears(sum, function_mpz, NULL);
+    free(c_sum_bytes);
 }
 
 
-void symmetric_paring(fp12_t *e, efp12_t P, efp12_t Q){
-
-}
-
-
-void G_random(efp12_t *R, efp_t gen1, efp2_t gen2){
-
-}
-
-
-void KeyGen(PubKey pk, SecKey sk, char **argv){
-    pairing_t pairing;
-
-    pairing_init_set_str(pairing, argv);
-    
+void KeyGen(PubKey pk, SecKey sk){
     // g <- G
-    element_init_G1(pk.g, pairing);
+    element_random(pk.g);
+
 
     // h1, h2, h3, h4 <- G
-    element_init_G1(pk.h1, pairing);
-    element_init_G1(pk.h2, pairing);
-    element_init_G1(pk.h3, pairing);
-    element_init_G1(pk.h4, pairing);
+    element_random(pk.h1);
+    element_random(pk.h2);
+    element_random(pk.h3);
+    element_random(pk.h4);
 
     // α <- Zr
-    element_random(sk.alpha);
+    // element_random(sk.alpha);
+    element_set_si(sk.alpha, 10);
 
     // g1 = [α]g
-    element_mul(pk.g1, pk.g, sk.alpha);
+    // element_mul(pk.g1, pk.g, sk.alpha);
+    element_pow_zn(pk.g1, pk.g, sk.alpha);
 }
 
 
-void PreCal(PreValue *pv, PubKey pk){
+void PreCal(PreValue pv, PubKey pk){
+    // e(g, g)
+    element_pairing(pv.e_gg, pk.g, pk.g);
 
+    // e(g, h1)
+    element_pairing(pv.e_gh1, pk.g, pk.h1);
+
+    // e(g, h2)
+    element_pairing(pv.e_gh2, pk.g, pk.h2);
+
+    // e(g, h3)
+    element_pairing(pv.e_gh3, pk.g, pk.h3);
+
+    // e(g, h4)
+    element_pairing(pv.e_gh4, pk.g, pk.h4);
 }
 
 
-void HomKeyGen(HomKey hk, PubKey pk, SecKey sk, element_t omega){
+void HomKeyGen(HomKey hk, PubKey pk, SecKey sk, element_t omega, pairing_t pairing){
     element_t index;
+    element_init_Zr(index, pairing);
     
     // rω3, rω4 <- Zr
     element_random(hk.rw3);
@@ -112,38 +168,55 @@ void HomKeyGen(HomKey hk, PubKey pk, SecKey sk, element_t omega){
 
     // hω3 = [1/(α-ω)]([-rω3]g + h3)
     element_neg(index, hk.rw3);
-    element_mul(hk.hw3, pk.g, index);
+    // element_mul(hk.hw3, pk.g, index);
+    element_pow_zn(hk.hw3, pk.g, index);
     element_add(hk.hw3, hk.hw3, pk.h3);
     element_sub(index, sk.alpha, omega);
     element_invert(index, index);
-    element_mul(hk.hw3, hk.hw3, index);
+    // element_mul(hk.hw3, hk.hw3, index);
+    element_pow_zn(hk.hw3, hk.hw3, index);
 
     // hω4 = [1/(α-ω)]([-rω4]g + h4)
     element_neg(index, hk.rw4);
-    element_mul(hk.hw4, pk.g, index);
+    // element_mul(hk.hw4, pk.g, index);
+    element_pow_zn(hk.hw4, pk.g, index);
     element_add(hk.hw4, hk.hw4, pk.h4);
     element_sub(index, sk.alpha, omega);
     element_invert(index, index);
-    element_mul(hk.hw4, hk.hw4, index);
+    // element_mul(hk.hw4, hk.hw4, index);
+    element_pow_zn(hk.hw4, hk.hw4, index);
 
     // gw = [ω]g
-    element_mul(hk.gw, pk.g, omega);
+    // element_mul(hk.gw, pk.g, omega);
+    element_pow_zn(hk.gw, pk.g, omega);
+
+    element_clear(index);
 }
 
 
-void Enc(Ciphertext ct, PubKey pk, element_t M, element_t omega, PreValue pv){
+void Enc(Ciphertext ct, PubKey pk, element_t M, element_t omega, PreValue pv, pairing_t pairing){
     element_t index, s, delta;      // Zr
+    element_init_Zr(index, pairing);
+    element_init_Zr(s, pairing);
+    element_init_Zr(delta, pairing);
+
     element_t c5, tmp_fp;           // fp
+    element_init_GT(c5, pairing);
+    element_init_GT(tmp_fp, pairing);
+
     element_t tmp_efp;              // efp
+    element_init_G1(tmp_efp, pairing);
 
     // s <- Zr
     element_random(s);
 
-    // c1 = [s]g1 + [s]ω
-    element_mul(ct.c1, pk.g1, s);
+    // c1 = [s]g1 + [-sω]g
+    // element_mul(ct.c1, pk.g1, s);
+    element_pow_zn(ct.c1, pk.g1, s);
     element_mul(index, s, omega);
-    element_invert(index, index);
-    element_mul(tmp_efp, pk.g, index);
+    element_neg(index, index);
+    // element_mul(tmp_efp, pk.g, index);
+    element_pow_zn(tmp_efp, pk.g, index);
     element_add(ct.c1, ct.c1, tmp_efp);
 
     // c2 = e(g, g)^s
@@ -168,40 +241,82 @@ void Enc(Ciphertext ct, PubKey pk, element_t M, element_t omega, PreValue pv){
 
     // τ = f(c5)
     Function(ct.tau, c5);
+
+    element_clear(index);
+    element_clear(s);
+    element_clear(delta);
+    element_clear(c5);
+    element_clear(tmp_fp);
+    element_clear(tmp_efp);
 }
 
 
-int Test(PubKey pk, HomKey hk, Ciphertext ct){
+int Test(HomKey hk, Ciphertext ct, pairing_t pairing){
     element_t delta, index, tau;    // Zr
+    element_init_Zr(delta, pairing);
+    element_init_Zr(index, pairing);
+    element_init_Zr(tau, pairing);
+
     element_t tmp1_fp, tmp2_fp;   // fp
+    element_init_GT(tmp1_fp, pairing);
+    element_init_GT(tmp2_fp, pairing);
+
     element_t tmp_efp;   // efp
+    element_init_G1(tmp_efp, pairing);
 
     // δ = Γ(c1, c2, c3, c4)
     Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4);
 
-    // τ = f(e(c1, hω3 + hω4^δ) * c2^{rω3 + rω4*δ})
-    element_mul(tmp_efp, hk.hw4, delta);
+    // τ = f(e(c1, hω3 + [δ]hω4) * c2^{rω3 + rω4*δ})
+    // element_mul(tmp_efp, hk.hw4, delta);
+    element_pow_zn(tmp_efp, hk.hw4, delta);
     element_add(tmp_efp, tmp_efp, hk.hw3);
-    pairing(tmp1_fp, ct.c1, tmp_efp);
+    element_pairing(tmp1_fp, ct.c1, tmp_efp);
     element_mul(index, hk.rw4, delta);
     element_add(index, index, hk.rw3);
     element_pow_zn(tmp2_fp, ct.c2, index);
     element_mul(tmp1_fp, tmp1_fp, tmp2_fp);
     Function(tau, tmp1_fp);
 
+    element_clear(delta);
+    element_clear(index);
+    element_clear(tmp1_fp);
+    element_clear(tmp2_fp);
+    element_clear(tmp_efp);
+
     // if τ = ct.tau then return 1 else return 0
     if(element_cmp(tau, ct.tau) == 0){
+        element_clear(tau);
         return 1;
-    }else{
+    }
+    else{
+        element_clear(tau);
         return 0;
     }
 }
 
 
-void Dec(element_t M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
+void Dec(element_t M, PubKey pk, SecKey sk, element_t omega, Ciphertext ct, pairing_t pairing){
     element_t rw1, rw2, rw3, rw4, index, delta, tau;     // Zr
+    element_init_Zr(rw1, pairing);
+    element_init_Zr(rw2, pairing);
+    element_init_Zr(rw3, pairing);
+    element_init_Zr(rw4, pairing);
+    element_init_Zr(index, pairing);
+    element_init_Zr(delta, pairing);
+    element_init_Zr(tau, pairing);
+
     element_t c4, c5, tmp_fp;   // fp
+    element_init_GT(c4, pairing);
+    element_init_GT(c5, pairing);
+    element_init_GT(tmp_fp, pairing);
+
     element_t hw1, hw2, hw3, hw4, tmp_efp;   // efp
+    element_init_G1(hw1, pairing);
+    element_init_G1(hw2, pairing);
+    element_init_G1(hw3, pairing);
+    element_init_G1(hw4, pairing);
+    element_init_G1(tmp_efp, pairing);
 
     // rω1, rω2, rω3, rω4 <- Zr
     element_random(rw1);
@@ -211,48 +326,57 @@ void Dec(element_t M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
 
     // hω1 = [1/(α-ω)]([-rω1]g + h1)
     element_neg(index, rw1);
-    element_mul(hw1, pk.g, index);
+    // element_mul(hw1, pk.g, index);
+    element_pow_zn(hw1, pk.g, index);
     element_add(hw1, hw1, pk.h1);
     element_sub(index, sk.alpha, omega);
     element_invert(index, index);
-    element_mul(hw1, hw1, index);
+    // element_mul(hw1, hw1, index);
+    element_pow_zn(hw1, hw1, index);
 
     // hω2 = [1/(α-ω)]([-rω2]g + h2)
     element_neg(index, rw2);
-    element_mul(hw2, pk.g, index);
+    // element_mul(hw2, pk.g, index);
+    element_pow_zn(hw2, pk.g, index);
     element_add(hw2, hw2, pk.h2);
     element_sub(index, sk.alpha, omega);
     element_invert(index, index);
-    element_mul(hw2, hw2, index);
+    // element_mul(hw2, hw2, index);
+    element_pow_zn(hw2, hw2, index);
 
     // hω3 = [1/(α-ω)]([-rω3]g + h3)
     element_neg(index, rw3);
-    element_mul(hw3, pk.g, index);
+    // element_mul(hw3, pk.g, index);
+    element_pow_zn(hw3, pk.g, index);
     element_add(hw3, hw3, pk.h3);
     element_sub(index, sk.alpha, omega);
     element_invert(index, index);
-    element_mul(hw3, hw3, index);
+    // element_mul(hw3, hw3, index);
+    element_pow_zn(hw3, hw3, index);
 
     // hω4 = [1/(α-ω)]([-rω4]g + h3)
     element_neg(index, rw4);
-    element_mul(hw4, pk.g, index);
+    // element_mul(hw4, pk.g, index);
+    element_pow_zn(hw4, pk.g, index);
     element_add(hw4, hw4, pk.h4);
     element_sub(index, sk.alpha, omega);
     element_invert(index, index);
-    element_mul(hw4, hw4, index);
+    // element_mul(hw4, hw4, index);
+    element_pow_zn(hw4, hw4, index);
 
     // δ = Γ(c1, c2, c3, c4)
     Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4);
 
     // c4' = e(c1, hω2) * c2^{rω2}
-    paring(c4, ct.c1, hw2);
+    element_pairing(c4, ct.c1, hw2);
     element_pow_zn(tmp_fp, ct.c2, rw2);
     element_mul(c4, c4, tmp_fp);
 
-    // c5 = e(c1, hω3 + hω4^δ) * c2^{rω3 + rω4*δ}
-    element_mul(tmp_efp, hw4, delta);
+    // c5 = e(c1, hω3 + [δ]hω4) * c2^{rω3 + rω4*δ}
+    // element_mul(tmp_efp, hw4, delta);
+    element_pow_zn(tmp_efp, hw4, delta);
     element_add(tmp_efp, tmp_efp, hw3);
-    pairing(c5, ct.c1, tmp_efp);
+    element_pairing(c5, ct.c1, tmp_efp);
     element_mul(index, rw4, delta);
     element_add(index, index, rw3);
     element_pow_zn(tmp_fp, ct.c2, index);
@@ -263,24 +387,368 @@ void Dec(element_t M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
 
     if (element_cmp(tau, ct.tau) == 0 && element_cmp(c4, ct.c4) == 0){
         // M = c3 * e(c1, hω1) * c2^{rω1}
-        paring(M, ct.c1, hw1);
+        element_pairing(M, ct.c1, hw1);
         element_pow_zn(tmp_fp, ct.c2, rw1);
         element_mul(M, M, tmp_fp);
         element_mul(M, M, ct.c3);
     }
+    
     else{
         printf("Decryption failed\n");
         element_set0(M);
     }
+
+    element_clear(rw1);
+    element_clear(rw2);
+    element_clear(rw3);
+    element_clear(rw4);
+    element_clear(index);
+    element_clear(delta);
+    element_clear(tau);
+    element_clear(c4);
+    element_clear(c5);
+    element_clear(tmp_fp);
+    element_clear(hw1);
+    element_clear(hw2);
+    element_clear(hw3);
+    element_clear(hw4);
+    element_clear(tmp_efp);
 }
 
 
-void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2, PreValue pv){
+void Eval(Ciphertext ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2, PreValue pv, pairing_t pairing){
+    // 暗号文正当性確認
+    element_t delta1, delta2, index, tau1, tau2;   // Zr
+    element_init_Zr(delta1, pairing);
+    element_init_Zr(delta2, pairing);
+    element_init_Zr(index, pairing);
+    element_init_Zr(tau1, pairing);
+    element_init_Zr(tau2, pairing);
 
+    element_t tmp_fp, c5_1, c5_2;   // fp
+    element_init_GT(tmp_fp, pairing);
+    element_init_GT(c5_1, pairing);
+    element_init_GT(c5_2, pairing);
+
+    element_t tmp_efp;   // efp
+    element_init_G1(tmp_efp, pairing);
+
+    // δ1 = Γ(ct1.c1, ct1.c2, ct1.c3, ct1.c4)
+    Gamma(delta1, ct1.c1, ct1.c2, ct1.c3, ct1.c4);
+
+    // δ2 = Γ(ct2.c1, ct2.c2, ct2.c3, ct2.c4)
+    Gamma(delta2, ct2.c1, ct2.c2, ct2.c3, ct2.c4);
+
+    // c5_1 = e(c1_1, hω3+[δ1]hω4) * c2_1^{rω3+δ1*rω4}
+    // element_mul(tmp_efp, hk.hw4, delta1);
+    element_pow_zn(tmp_efp, hk.hw4, delta1);
+    element_add(tmp_efp, tmp_efp, hk.hw3);
+    element_pairing(c5_1, ct1.c1, tmp_efp);
+    element_mul(index, hk.rw4, delta1);
+    element_add(index, index, hk.rw3);
+    element_pow_zn(tmp_fp, ct1.c2, index);
+    element_mul(c5_1, c5_1, tmp_fp);
+
+    // c5_2 = e(c1_2, hω3+[δ2]hω4) * c2_2^{rω3+δ2*rω4}
+    // element_mul(tmp_efp, hk.hw4, delta2);
+    element_pow_zn(tmp_efp, hk.hw4, delta2);
+    element_add(tmp_efp, tmp_efp, hk.hw3);
+    element_pairing(c5_2, ct2.c1, tmp_efp);
+    element_mul(index, hk.rw4, delta2);
+    element_add(index, index, hk.rw3);
+    element_pow_zn(tmp_fp, ct2.c2, index);
+    element_mul(c5_2, c5_2, tmp_fp);
+
+    // τ1 = f(c5_1)
+    Function(tau1, c5_1);
+
+    // τ2 = f(c5_2)
+    Function(tau2, c5_2);
+
+    if(element_cmp(tau1, ct1.tau) != 0 || element_cmp(tau2, ct2.tau) != 0){
+        printf("Evaluation failed\n");
+    }
+
+    else{
+        // 準同型演算
+        element_t s, delta;   // Zr
+        element_init_Zr(s, pairing);
+        element_init_Zr(delta, pairing);
+
+        element_t c5;   // fp
+        element_init_GT(c5, pairing);
+
+        // s <- Zr
+        element_random(s);
+
+        // c1 = c1,1+c2,1+[-s]([-1]g1+[ω]g)
+        element_neg(ct.c1, pk.g1);
+        element_add(ct.c1, ct.c1, hk.gw);
+        element_neg(index, s);
+        // element_mul(ct.c1, ct.c1, index);
+        element_pow_zn(ct.c1, ct.c1, index);
+        element_add(ct.c1, ct.c1, ct1.c1);
+        element_add(ct.c1, ct.c1, ct2.c1);
+
+        // c2 = c1,2*c2,2*e(g,g)^s
+        element_pow_zn(ct.c2, pv.e_gg, s);
+        element_mul(ct.c2, ct.c2, ct1.c2);
+        element_mul(ct.c2, ct.c2, ct2.c2);
+
+        // c3 = c1,3*c2,3*e(g,h1)^{-s}
+        element_neg(index, s);
+        element_pow_zn(ct.c3, pv.e_gh1, index);
+        element_mul(ct.c3, ct.c3, ct1.c3);
+        element_mul(ct.c3, ct.c3, ct2.c3);
+
+        // c4 = c1,4*c2,4*e(g,h2)^s
+        element_pow_zn(ct.c4, pv.e_gh2, s);
+        element_mul(ct.c4, ct.c4, ct1.c4);
+        element_mul(ct.c4, ct.c4, ct2.c4);
+
+        // δ = Γ(c1, c2, c3, c4)
+        Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4);
+
+        // c5 = e(c1,hω3+[δ]hω4) * c2^{rω3+rω4*δ}
+        // element_mul(tmp_efp, hk.hw4, delta);
+        element_pow_zn(tmp_efp, hk.hw4, delta);
+        element_add(tmp_efp, tmp_efp, hk.hw3);
+        element_pairing(c5, ct.c1, tmp_efp);
+        element_mul(index, hk.rw4, delta);
+        element_add(index, index, hk.rw3);
+        element_pow_zn(tmp_fp, ct.c2, index);
+        element_mul(c5, c5, tmp_fp);
+
+        // τ = f(c5)
+        Function(ct.tau, c5);
+
+        element_clear(s);
+        element_clear(delta);
+        element_clear(c5);
+    }
+
+    element_clear(delta1);
+    element_clear(delta2);
+    element_clear(tau1);
+    element_clear(tau2);
+    element_clear(c5_1);
+    element_clear(c5_2);
+    element_clear(index);
+    element_clear(tmp_fp);
+    element_clear(tmp_efp);
 }
 
 
 int main(int argc, char **argv) {
+    pairing_t pairing;
+    pbc_demo_pairing_init(pairing, argc, argv);
 
-  return 0;
+
+    // Message
+    element_t M;
+    element_init_GT(M, pairing);
+    element_random(M);
+    element_printf("Message : %B\n", M);
+    
+
+    // Key-word
+    element_t omega;
+    element_init_Zr(omega, pairing);
+    element_random(omega);
+    element_printf("Key-word : %B\n", omega);
+
+
+    // Key Generation
+    printf("Key Generation\n");
+    printf("Public Key = (g, g_1, h_1, h_2, h_3, h_4, hk, f)\n");
+    
+    PubKey pk;
+    element_init_G1(pk.g, pairing);
+    element_init_G1(pk.h1, pairing);
+    element_init_G1(pk.h2, pairing);
+    element_init_G1(pk.h3, pairing);
+    element_init_G1(pk.h4, pairing);
+    element_init_G1(pk.g1, pairing);
+    
+    SecKey sk;
+    element_init_Zr(sk.alpha, pairing);
+    
+    KeyGen(pk, sk);
+
+    element_printf("g : %B\n", pk.g);
+    element_printf("g_1 : %B\n", pk.g1);
+    element_printf("h_1 : %B\n", pk.h1);
+    element_printf("h_2 : %B\n", pk.h2);
+    element_printf("h_3 : %B\n", pk.h3);
+    element_printf("h_4 : %B\n", pk.h4);
+    printf("hk, f : SHA-512\n");
+    printf("\n");
+
+    printf("Secret Key = α\n");
+    element_printf("α : %B\n", sk.alpha);
+    printf("\n");    
+    
+
+    // Pre-calculations
+    PreValue pv;
+    element_init_GT(pv.e_gg, pairing);
+    element_init_GT(pv.e_gh1, pairing);
+    element_init_GT(pv.e_gh2, pairing);
+    element_init_GT(pv.e_gh3, pairing);
+    element_init_GT(pv.e_gh4, pairing);
+
+    PreCal(pv, pk);
+
+
+    // Homomorphic Key Generation
+    printf("Homomorphic Key = (g^ω, (r_{ω,3}, h_{ω,3}), (r_{ω,4}, h_{ω,4}))\n");
+    
+    HomKey hk;
+    element_init_G1(hk.gw, pairing);
+    element_init_Zr(hk.rw3, pairing);
+    element_init_G1(hk.hw3, pairing);
+    element_init_Zr(hk.rw4, pairing);
+    element_init_G1(hk.hw4, pairing);
+    
+    HomKeyGen(hk, pk, sk, omega, pairing);
+
+    element_printf("g^ω : %B\n", hk.gw);
+    element_printf("r_{ω,3} : %B\n", hk.rw3);
+    element_printf("h_{ω,3} : %B\n", hk.hw3);
+    element_printf("r_{ω,4} : %B\n", hk.rw4);
+    element_printf("h_{ω,4} : %B\n", hk.hw4);
+    printf("\n");
+
+
+    // Encryption
+    printf("Cypher Text = (c_1, c_2, c_3, c_4, τ)\n");
+
+    Ciphertext ct;
+    element_init_G1(ct.c1, pairing);
+    element_init_GT(ct.c2, pairing);
+    element_init_GT(ct.c3, pairing);
+    element_init_GT(ct.c4, pairing);
+    element_init_Zr(ct.tau, pairing);
+    
+    Enc(ct, pk, M, omega, pv, pairing);
+    
+    element_printf("c_1 : %B\n", ct.c1);
+    element_printf("c_2 : %B\n", ct.c2);
+    element_printf("c_3 : %B\n", ct.c3);
+    element_printf("c_4 : %B\n", ct.c4);
+    element_printf("τ : %B\n", ct.tau);
+    printf("\n");
+
+
+    // Test
+    int test = 0;
+    test = Test(hk, ct, pairing);
+    printf("Test Result : ");
+    if(test == 1){printf("Success\n");}
+    else{printf("Failed\n");}
+    printf("\n");
+
+
+    // Decryption
+    printf("Decryption\n");
+    Dec(M, pk, sk, omega, ct, pairing);
+    element_printf("Decrypted Message :%B\n ", M);
+    printf("\n");
+
+
+    // Evaluation
+    element_t M1, M2;
+    element_init_GT(M1, pairing);
+    element_init_GT(M2, pairing);
+
+    element_random(M1);
+    element_random(M2);
+    
+    element_printf("Message 1 : %B\n", M1);
+    element_printf("Message 2 : %B\n", M2);
+
+    Ciphertext ct1;
+    element_init_G1(ct1.c1, pairing);
+    element_init_GT(ct1.c2, pairing);
+    element_init_GT(ct1.c3, pairing);
+    element_init_GT(ct1.c4, pairing);
+    element_init_Zr(ct1.tau, pairing);
+
+    Ciphertext ct2;
+    element_init_G1(ct2.c1, pairing);
+    element_init_GT(ct2.c2, pairing);
+    element_init_GT(ct2.c3, pairing);
+    element_init_GT(ct2.c4, pairing);
+    element_init_Zr(ct2.tau, pairing);
+
+    Enc(ct1, pk, M1, omega, pv, pairing);
+    Enc(ct2, pk, M2, omega, pv, pairing);
+
+    Ciphertext ct3;
+    element_init_G1(ct3.c1, pairing);
+    element_init_GT(ct3.c2, pairing);
+    element_init_GT(ct3.c3, pairing);
+    element_init_GT(ct3.c4, pairing);
+    element_init_Zr(ct3.tau, pairing);
+
+    Eval(ct3, pk, hk, ct1, ct2, pv, pairing);
+    Dec(M, pk, sk, omega, ct3, pairing);
+    element_printf("Decrypted Message :%B\n ", M);
+
+    element_mul(M, M1, M2);
+    element_printf("Message 1 * Message 2 : %B\n", M);
+
+    element_clear(M);
+    element_clear(omega);
+    element_clear(M1);
+    element_clear(M2);
+
+    element_clear(pk.g);
+    element_clear(pk.g1);
+    element_clear(pk.h1);
+    element_clear(pk.h2);
+    element_clear(pk.h3);
+    element_clear(pk.h4);
+
+    element_clear(sk.alpha);
+
+    element_clear(hk.gw);
+    element_clear(hk.rw3);
+    element_clear(hk.hw3);
+    element_clear(hk.rw4);
+    element_clear(hk.hw4);
+
+    element_clear(pv.e_gg);
+    element_clear(pv.e_gh1);
+    element_clear(pv.e_gh2);
+    element_clear(pv.e_gh3);
+    element_clear(pv.e_gh4);
+
+    element_clear(ct.c1);
+    element_clear(ct.c2);
+    element_clear(ct.c3);
+    element_clear(ct.c4);
+    element_clear(ct.tau);
+
+    element_clear(ct1.c1);
+    element_clear(ct1.c2);
+    element_clear(ct1.c3);
+    element_clear(ct1.c4);
+    element_clear(ct1.tau);
+    
+    element_clear(ct2.c1);
+    element_clear(ct2.c2);
+    element_clear(ct2.c3);
+    element_clear(ct2.c4);
+    element_clear(ct2.tau);
+    
+    element_clear(ct3.c1);
+    element_clear(ct3.c2);
+    element_clear(ct3.c3);
+    element_clear(ct3.c4);
+    element_clear(ct3.tau);
+    
+    pairing_clear(pairing);
+
+    return 0;
 }
