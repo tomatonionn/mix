@@ -1,0 +1,1048 @@
+#include <ELiPS/bls12.h>
+#include <stdio.h>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+
+
+typedef struct{
+    sym_t g;
+    sym_t g1;
+    sym_t h1;
+    sym_t h2;
+    sym_t h3;
+    sym_t h4;
+    // hk in HK
+    // f
+}PubKey;
+
+
+typedef struct{
+    mpz_t alpha;
+}SecKey;
+
+
+typedef struct{
+    sym_t gw;
+    mpz_t rw3;
+    sym_t hw3;
+    mpz_t rw4;
+    sym_t hw4;
+}HomKey;
+
+
+typedef struct{
+    sym_t c1;
+    fp12_t c2;
+    fp12_t c3;
+    fp12_t c4;
+    mpz_t tau;
+}Ciphertext;
+
+
+typedef struct{
+    fp12_t gg;
+    fp12_t gh1;
+    fp12_t gh2;
+    fp12_t gh3;
+    fp12_t gh4;
+}PreValue;
+
+
+// 0.000680[ms]
+void pk_init(PubKey *pk){
+    sym_init(&pk->g);
+    sym_init(&pk->g1);
+    sym_init(&pk->h1);
+    sym_init(&pk->h2);
+    sym_init(&pk->h3);
+    sym_init(&pk->h4);
+}
+
+
+// 0.000020[ms]
+void sk_init(SecKey *sk){
+    mpz_init(sk->alpha);
+}
+
+
+// 0.000420[ms]
+void hk_init(HomKey *hk){
+    sym_init(&hk->gw);
+    mpz_init(hk->rw3);
+    sym_init(&hk->hw3);
+    mpz_init(hk->rw4);
+    sym_init(&hk->hw4);
+
+}
+
+
+// 0.000250[ms]
+void ct_init(Ciphertext *ct){
+    sym_init(&ct->c1);
+    fp12_init(&ct->c2);
+    fp12_init(&ct->c3);
+    fp12_init(&ct->c4);
+    mpz_init(ct->tau);
+}
+
+
+// 0.000270[ms]
+void pv_init(PreValue *pv){
+    fp12_init(&pv->gg);
+    fp12_init(&pv->gh1);
+    fp12_init(&pv->gh2);
+    fp12_init(&pv->gh3);
+    fp12_init(&pv->gh4);
+}
+
+
+void sym_set(sym_t *ANS, sym_t *A){
+    efp12_set(&ANS->p, &A->p);
+    efp12_set(&ANS->q, &A->q);
+}
+
+
+void sym_eca(sym_t *ANS, sym_t *A, sym_t *B){
+    efp12_eca(&ANS->p, &A->p, &B->p);
+    efp12_eca(&ANS->q, &A->q, &B->q);
+}
+
+
+void sym_ecd(sym_t *ANS, sym_t *A){
+    efp12_ecd(&ANS->p, &A->p);
+    efp12_ecd(&ANS->q, &A->q);
+}
+
+
+void sym_println(char *str, sym_t *A){
+    efp12_t G3;efp12_init(&G3);
+    efp12_eca(&G3, &A->p, &A->q);
+    printf("%s", str);
+    if (G3.infinity == 0) {
+        efp12_printf("", &G3);
+        printf("\n");
+    } else {
+        printf("0");
+    }
+}
+
+
+// ANS = [scalar1]P + [scalar2]Q
+void Multi_scm(sym_t *ANS, sym_t *P, mpz_t scalarP, sym_t *Q, mpz_t scalarQ){
+    if (mpz_cmp_ui(scalarP, 0) == 0 && mpz_cmp_ui(scalarQ, 0) == 0) {
+        ANS->infinity = 1;
+        return;
+    } else if (mpz_cmp_ui(scalarP, 0) != 0 && mpz_cmp_ui(scalarQ, 0) == 0) {
+        bls12_sym_scm(ANS, P, scalarP);
+        return;
+    } else if (mpz_cmp_ui(scalarP, 0) == 0 && mpz_cmp_ui(scalarQ, 0) != 0) {
+        bls12_sym_scm(ANS, Q, scalarQ);
+        return;
+    }
+    sym_t Tmp_P, Tmp_Q, Tmp_PQ, Next;
+    sym_init(&Tmp_P);sym_set(&Tmp_P, P);
+    sym_init(&Tmp_Q);sym_set(&Tmp_Q, Q);
+    sym_init(&Tmp_PQ);sym_eca(&Tmp_PQ, P, Q);
+    sym_init(&Next);
+    int i, lengthP, lengthQ, length;
+    lengthP = (int)mpz_sizeinbase(scalarP, 2);
+    lengthQ = (int)mpz_sizeinbase(scalarQ, 2);
+    length = (lengthP > lengthQ) ? lengthP : lengthQ;
+    char binaryP[length + 1];
+    char binaryQ[length + 1];
+
+    if (lengthP > lengthQ){
+        mpz_get_str(binaryP, 2, scalarP);
+
+        memset(binaryQ, '0', length);
+        binaryQ[length] = '\0';
+        char tempQ[lengthQ + 1];
+        mpz_get_str(tempQ, 2, scalarQ);
+        strcpy(binaryQ + (length - lengthQ), tempQ);
+        
+        sym_set(&Next, &Tmp_P);
+    }
+    else if (lengthP < lengthQ){
+        mpz_get_str(binaryQ, 2, scalarQ);
+
+        memset(binaryP, '0', length);
+        binaryP[length] = '\0';
+        char tempP[lengthP + 1];
+        mpz_get_str(tempP, 2, scalarP);
+        strcpy(binaryP + (length - lengthP), tempP);
+        
+        sym_set(&Next, &Tmp_Q);
+    }
+    else{
+        mpz_get_str(binaryP, 2, scalarP);
+
+        mpz_get_str(binaryQ, 2, scalarQ);
+
+        sym_set(&Next, &Tmp_PQ);
+    }
+    // printf("binaryP: %s\n", binaryP);
+    // printf("binaryQ: %s\n", binaryQ);
+
+    for (i = 1; i < length; i++) {
+        sym_ecd(&Next, &Next);
+        if (binaryP[i] == '1' && binaryQ[i] == '1') {
+            sym_eca(&Next, &Next, &Tmp_PQ);
+        }
+        else if (binaryQ[i] == '1') {
+            sym_eca(&Next, &Next, &Tmp_Q);
+        }
+        else if (binaryP[i] == '1') {
+            sym_eca(&Next, &Next, &Tmp_P);
+        }
+    }
+    sym_set(ANS, &Next);
+}
+
+
+// 0.001660[ms]
+void Gamma(mpz_t gamma, sym_t c1, fp12_t c2, fp12_t c3, fp12_t c4){
+
+    // (c1, c2, c3, c4) → fp12_sum → c_sum
+    mp_limb_t limb_sum;
+    fp12_t fp12_sum;fp12_init(&fp12_sum);
+
+    // c1.x +c1.y + c2 + c3 + c4 → fp12_sum
+    fp12_add(&fp12_sum, &c1.p.x, &c1.p.y);
+    fp12_add(&fp12_sum, &fp12_sum, &c1.q.x);
+    fp12_add(&fp12_sum, &fp12_sum, &c1.q.y);
+    fp12_add(&fp12_sum, &fp12_sum, &c2);
+    fp12_add(&fp12_sum, &fp12_sum, &c3);
+    fp12_add(&fp12_sum, &fp12_sum, &c4);
+
+    // fp12_sum.x0.x0.x0.x0 + fp12_sum.x0.x0.x1.x0 + ... → mpz_t c_sum
+    mpn_add_n(&limb_sum, &fp12_sum.x0.x0.x0.x0[0], &fp12_sum.x0.x0.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x0.x1.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x0.x1.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x0.x2.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x0.x2.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x1.x0.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x1.x0.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x1.x1.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x1.x1.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x1.x2.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &fp12_sum.x1.x2.x1.x0[0], FPLIMB);
+
+
+    // HASH(c_sum) → gamma
+    // mpz_t型をバイト列に変換
+    mpz_t mpz_sum; mpz_init(mpz_sum);
+    mpz_set_ui(mpz_sum, limb_sum);
+    size_t c_sum_len = (mpz_sizeinbase(mpz_sum, 2) + 7) / 8; // バイト数を計算
+    unsigned char *c_sum_bytes = (unsigned char *)malloc(c_sum_len);
+    mpz_export(c_sum_bytes, NULL, 1, 1, 0, 0, mpz_sum);
+
+    // ハッシュ値を生成
+    unsigned char char_gamma[EVP_MAX_MD_SIZE]; // 最大のハッシュサイズ
+    EVP_MD_CTX *mdctx;
+    const EVP_MD *md;
+    unsigned int md_len;
+    md = EVP_sha512();
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, md, NULL);
+    EVP_DigestUpdate(mdctx, c_sum_bytes, c_sum_len);
+    EVP_DigestFinal_ex(mdctx, char_gamma, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    // ハッシュ値をmpz_t型に変換
+    mpz_import(gamma, SHA512_DIGEST_LENGTH, 1, 1, 0, 0, char_gamma);
+
+    mpz_clear(mpz_sum);
+}
+
+
+// 0.001060[ms]
+void Function(mpz_t function, fp12_t c5){
+
+    // c5.x0.x0.x0.x0 + c5.x0.x0.x0.x0 + ... → mpz_t limb_sum
+    mp_limb_t limb_sum;
+    mpn_add_n(&limb_sum, &c5.x0.x0.x0.x0[0], &c5.x0.x0.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x0.x1.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x0.x1.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x0.x2.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x0.x2.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x1.x0.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x1.x0.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x1.x1.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x1.x1.x1.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x1.x2.x0.x0[0], FPLIMB);
+    mpn_add_n(&limb_sum, &limb_sum, &c5.x1.x2.x1.x0[0], FPLIMB);
+
+
+    // HASH(c5_sum) → function
+    // mpz_t型をバイト列に変換
+    mpz_t mpz_sum; mpz_init(mpz_sum);
+    mpz_set_ui(mpz_sum, limb_sum);
+    size_t c5_sum_len = (mpz_sizeinbase(mpz_sum, 2) + 7) / 8; // バイト数を計算
+    unsigned char *c5_sum_bytes = (unsigned char *)malloc(c5_sum_len);
+    mpz_export(c5_sum_bytes, NULL, 1, 1, 0, 0, mpz_sum);
+
+    // ハッシュ値を生成
+    unsigned char char_function[EVP_MAX_MD_SIZE]; // 最大のハッシュサイズ
+    EVP_MD_CTX *mdctx;
+    const EVP_MD *md;
+    unsigned int md_len;
+    md = EVP_sha512();
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, md, NULL);
+    EVP_DigestUpdate(mdctx, c5_sum_bytes, c5_sum_len);
+    EVP_DigestFinal_ex(mdctx, char_function, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    // ハッシュ値をmpz_t型に変換
+    mpz_import(function, SHA512_DIGEST_LENGTH, 1, 1, 0, 0, char_function);
+
+    mpz_clear(mpz_sum);
+}
+
+
+void G_random(sym_t *R, efp_t gen1, efp2_t gen2){
+    efp12_t tmp;efp12_init(&tmp);
+
+    fr_t s1;fr_init(&s1);
+    fr_t s2;fr_init(&s2);
+    fr_set_random(&s1, state);
+    fr_set_random(&s2, state);
+
+    efp_t Rp;efp_init(&Rp);
+    g1_scm(&Rp, &gen1, &s1);
+    efp_to_efp12(&tmp, &Rp);
+    fp12_mod_montgomery(&tmp.x, &tmp.x);
+    fp12_mod_montgomery(&tmp.y, &tmp.y);
+    efp12_set(&R->p, &tmp);
+
+    efp2_t Rq;efp2_init(&Rq);
+    g2_scm(&Rq, &gen2, &s2);
+    efp2_to_efp12(&tmp, &Rq);
+    fp12_mod_montgomery(&tmp.x, &tmp.x);
+    fp12_mod_montgomery(&tmp.y, &tmp.y);
+    efp12_set(&R->q, &tmp);
+}
+
+
+void KeyGen(PubKey *pk, SecKey *sk, efp_t gen1, efp2_t gen2){
+    PubKey pk_tmp;pk_init(&pk_tmp);
+    SecKey sk_tmp;sk_init(&sk_tmp);
+
+    // g ← G
+    G_random(&pk_tmp.g, gen1, gen2);
+
+    // h1, h2, h3, h4 ← G
+    G_random(&pk_tmp.h1, gen1, gen2);
+    G_random(&pk_tmp.h2, gen1, gen2);
+    G_random(&pk_tmp.h3, gen1, gen2);
+    G_random(&pk_tmp.h4, gen1, gen2);
+    
+    // α ← Zr
+    mpz_urandomm(sk_tmp.alpha, state, order_z);
+
+    // g_1 ← g^α
+    bls12_sym_scm(&pk_tmp.g1, &pk_tmp.g, sk_tmp.alpha);
+
+    // hk, f ← SHA-512
+
+    // 代入
+    sym_set(&pk->g, &pk_tmp.g);
+    sym_set(&pk->g1, &pk_tmp.g1);
+    sym_set(&pk->h1, &pk_tmp.h1);
+    sym_set(&pk->h2, &pk_tmp.h2);
+    sym_set(&pk->h3, &pk_tmp.h3);
+    sym_set(&pk->h4, &pk_tmp.h4);
+    mpz_set(sk->alpha, sk_tmp.alpha);
+
+}
+
+
+// 整数表現
+void PreCal(PreValue *pv, PubKey pk){
+    PreValue pv_tmp;
+    
+    // e(g, g)
+    bls12_symmetric_optate_pairing(&pv_tmp.gg, &pk.g, &pk.g);
+
+    // e(g, h1)
+    bls12_symmetric_optate_pairing(&pv_tmp.gh1, &pk.g, &pk.h1);
+
+    // e(g, h2)
+    bls12_symmetric_optate_pairing(&pv_tmp.gh2, &pk.g, &pk.h2);
+
+    // e(g, h3)
+    bls12_symmetric_optate_pairing(&pv_tmp.gh3, &pk.g, &pk.h3);
+
+    // e(g, h4)
+    bls12_symmetric_optate_pairing(&pv_tmp.gh4, &pk.g, &pk.h4);
+
+    fp12_set(&pv->gg, &pv_tmp.gg);
+    fp12_set(&pv->gh1, &pv_tmp.gh1);
+    fp12_set(&pv->gh2, &pv_tmp.gh2);
+    fp12_set(&pv->gh3, &pv_tmp.gh3);
+    fp12_set(&pv->gh4, &pv_tmp.gh4);
+}
+
+/*
+void HomKeyGen(HomKey *hk, PubKey pk, SecKey sk, mpz_t omega){
+    mpz_t index;mpz_init(index);
+    
+    // 演算鍵（トラップドア）生成
+    HomKey hk_tmp;hk_init(&hk_tmp);
+
+    mpz_urandomm(hk_tmp.rw3, state, order_z);           // r_{ω,3} ← Zr
+
+    mpz_urandomm(hk_tmp.rw4, state, order_z);           // r_{ω,4} ← Zr
+
+    mpz_t scalar1;mpz_init(scalar1);
+    mpz_t scalar2;mpz_init(scalar2);
+    mpz_sub(scalar1, sk.alpha, omega);                      // α - ω
+    mpz_invert(scalar1, scalar1, order_z);                  // index = 1 / α - ω
+    
+    // h_{ω,3} ← (h_3 h^{-r_{ω,3}})^{1/(α-1))}
+    mpz_mul(scalar2, hk_tmp.rw3, scalar1);                      // r_{ω,3} / (α - ω)
+    mpz_neg(scalar2, scalar2);                                      // -r_{ω,3} / (α - ω)
+    mpz_mod(scalar2, scalar2, order_z);                             // index = -r_{ω,3} / (α - ω) mod r
+    Multi_scm(&hk_tmp.hw3, &pk.h3, scalar1, &pk.g, scalar2);    // g^{-r_{ω,3}} * h_3
+
+    // h_{ω,4} ← (h_4 h^{-r_{ω,4}})^{1/(α-1))}
+    mpz_mul(scalar2, hk_tmp.rw4, scalar1);                      // r_{ω,4} / (α - ω)
+    mpz_neg(scalar2, scalar2);                                      // -r_{ω,4} / (α - ω)
+    mpz_mod(scalar2, scalar2, order_z);                             // index = -r_{ω,4} / (α - ω) mod r
+    Multi_scm(&hk_tmp.hw4, &pk.h4, scalar1, &pk.g, scalar2);    // g^{-r_{ω,4}} * h_4
+
+    bls12_sym_scm(&hk_tmp.gw, &pk.g, omega);                             // g^{ω}
+
+    // 代入
+    sym_set(&hk->gw, &hk_tmp.gw);
+    mpz_set(hk->rw3, hk_tmp.rw3);
+    sym_set(&hk->hw3, &hk_tmp.hw3);
+    mpz_set(hk->rw4, hk_tmp.rw4);
+    sym_set(&hk->hw4, &hk_tmp.hw4);
+
+    // 解放
+    mpz_clear(index);
+}
+*/
+
+
+void HomKeyGen(HomKey *hk, PubKey pk, SecKey sk, mpz_t omega){
+    mpz_t index;mpz_init(index);
+    
+    // 演算鍵（トラップドア）生成
+    HomKey hk_tmp;hk_init(&hk_tmp);
+
+    mpz_urandomm(hk_tmp.rw3, state, order_z);           // r_{ω,3} ← Zr
+
+    mpz_urandomm(hk_tmp.rw4, state, order_z);           // r_{ω,4} ← Zr
+
+    // h_{ω,3} ← (h_3 h^{-r_{ω,3}})^{1/(α-1))}
+    mpz_neg(index, hk_tmp.rw3);                         // -r_{ω,3}
+    mpz_mod(index, index, order_z);                         // index = -r_{ω,3} mod r
+    bls12_sym_scm(&hk_tmp.hw3, &pk.g, index);               // g^{-r_{ω,3}}
+    sym_eca(&hk_tmp.hw3, &hk_tmp.hw3, &pk.h3);    // h_3 + g^-r_{ω,3}
+    mpz_sub(index, sk.alpha, omega);                        // α - ω
+    mpz_mod(index, index, order_z);                         // index = α - ω mod r
+    mpz_invert(index, index, order_z);                      // index = 1 / α - ω mod r
+    bls12_sym_scm(&hk_tmp.hw3, &hk_tmp.hw3, index);     // h_{ω,3} = (h_3 h^{-r_{ω,3}})^{1/(α-1))}
+
+    // h_{ω,4} ← (h_4 h^{-r_{ω,4}})^{1/(α-1))}
+    mpz_neg(index, hk_tmp.rw4);                         // -r_{ω,4}
+    mpz_mod(index, index, order_z);                         // index = -r_{ω,4} mod r
+    bls12_sym_scm(&hk_tmp.hw4, &pk.g, index);               // g^{-r_{ω,4}}
+    sym_eca(&hk_tmp.hw4, &hk_tmp.hw4, &pk.h4);    // h_4 + g^{-r_{ω,4}}
+    mpz_sub(index, sk.alpha, omega);                        // α - ω
+    mpz_mod(index, index, order_z);                         // index = α - ω mod r
+    mpz_invert(index, index, order_z);                      // index = 1 / α - ω
+    bls12_sym_scm(&hk_tmp.hw4, &hk_tmp.hw4, index);     // h_{ω,4} = (h_4 + h^{-r_{ω,4}})^{1/(α-1))}
+
+    // g^{ω}
+    bls12_sym_scm(&hk_tmp.gw, &pk.g, omega);
+
+    // 代入
+    sym_set(&hk->gw, &hk_tmp.gw);
+    mpz_set(hk->rw3, hk_tmp.rw3);
+    sym_set(&hk->hw3, &hk_tmp.hw3);
+    mpz_set(hk->rw4, hk_tmp.rw4);
+    sym_set(&hk->hw4, &hk_tmp.hw4);
+
+    // 解放
+    mpz_clear(index);
+}
+
+
+void Enc(Ciphertext *ct, PubKey pk, fp12_t M, mpz_t omega, PreValue pv){
+    mpz_t index;mpz_init(index);
+    sym_t sym_tmp;sym_init(&sym_tmp);
+    fp12_t fp12_tmp;fp12_init(&fp12_tmp);
+    
+    // 暗号文生成
+    Ciphertext ct_tmp;ct_init(&ct_tmp);
+
+    // s ← Zr
+    mpz_t s;mpz_init(s);
+    mpz_urandomm(s, state, order_z);
+
+    // c1 ← g1^s g^{-sω}
+    bls12_sym_scm(&ct_tmp.c1, &pk.g1, s);                   // g1^s
+    mpz_mul(index, s, omega);                           // sω
+    mpz_neg(index, index);                              // -sω
+    mpz_mod(index, index, order_z);                     // index = -sω mod r
+    bls12_sym_scm(&sym_tmp, &pk.g, index);                // g^{-sω}
+    sym_eca(&ct_tmp.c1, &ct_tmp.c1, &sym_tmp);      // c1 = g1^s + g^{-sω}
+
+    // c2 ← e(g,g)^s
+    bls12_g3_exp_basic(&ct_tmp.c2, &pv.gg, s);                    // c2 = e(g,g)^s
+
+    // c3 ← M・e(g,h1)^-s
+    bls12_g3_exp_basic(&ct_tmp.c3, &pv.gh1, s);                   // e(g,h1)^s
+    fp12_inv(&ct_tmp.c3, &ct_tmp.c3);                   // e(g,h1)^-s
+    fp12_mul(&ct_tmp.c3, &ct_tmp.c3, &M);               // c3 = M・e(g,h1)^-s
+
+    // c4 ← e(g,h2)^s
+    bls12_g3_exp_basic(&ct_tmp.c4, &pv.gh2, s);                   // c4 = e(g,h2)^s
+
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct_tmp.c1, ct_tmp.c2, ct_tmp.c3, ct_tmp.c4);        // δ ← Γ(c1,c2,c3,c4)
+
+    // c5 ← e(g,h3)^s e(g,h4)^sδ
+    fp12_t c5;fp12_init(&c5);
+    bls12_g3_exp_basic(&fp12_tmp, &pv.gh3, s);                    // e(g,h3)^s
+    mpz_mul(index, s, delta);                           // sδ
+    bls12_g3_exp_basic(&c5, &pv.gh4, index);                      // e(g,h4)^sδ
+    fp12_mul(&c5, &fp12_tmp, &c5);                      // c5 = e(g,h3)^s e(g,h4)^sδ
+
+    Function(ct_tmp.tau, c5);                           // τ ← F(c5)
+
+    // 代入
+    sym_set(&ct->c1, &ct_tmp.c1);
+    fp12_set(&ct->c2, &ct_tmp.c2);
+    fp12_set(&ct->c3, &ct_tmp.c3);
+    fp12_set(&ct->c4, &ct_tmp.c4);
+    mpz_set(ct->tau, ct_tmp.tau);
+
+    // 解放
+    mpz_clear(s);
+    mpz_clear(index);
+    mpz_clear(delta);
+}
+
+
+int Test(PubKey pk, HomKey hk, Ciphertext ct){
+    mpz_t index;mpz_init(index);
+    sym_t sym_tmp;sym_init(&sym_tmp);
+    fp12_t fp12_tmp1;fp12_init(&fp12_tmp1);
+    fp12_t fp12_tmp2;fp12_init(&fp12_tmp2);
+    
+    // 暗号文検証
+    int test = 0;
+
+
+    // δ ← Γ(c1,c2,c3,c4)
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4);
+
+    // τ_ch ← f(e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ})
+    mpz_t tau_ch;mpz_init(tau_ch);
+    bls12_sym_scm(&sym_tmp, &hk.hw4, delta);          // h_{ω,4}^δ
+    sym_eca(&sym_tmp, &hk.hw3, &sym_tmp);     // h_{ω,3) h_{ω,4}^δ
+    bls12_symmetric_optate_pairing(&fp12_tmp1, &ct.c1, &sym_tmp);     // e(c1,h_{ω,3) h_{ω,4}^δ)
+    mpz_mul(index, hk.rw4, delta);                  // r_{ω,4}δ
+    mpz_add(index, index, hk.rw3);                  // r_{ω,3}+r_{ω,4}δ
+    bls12_g3_exp_basic(&fp12_tmp2, &ct.c2, index);                // c2^{r_{ω,3}+r_{ω,4}δ}
+    fp12_mul(&fp12_tmp1, &fp12_tmp1, &fp12_tmp2);       // e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
+    Function(tau_ch, fp12_tmp1);                        // τ_ch = f(e(c1,h_{ω,3) h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ})
+
+    if(mpz_cmp(ct.tau, tau_ch) == 0){
+        test = 1;
+    }
+
+    // 解放
+    mpz_clear(index);
+
+    return test;
+}
+
+
+void Dec(fp12_t *M, PubKey pk, SecKey sk, mpz_t omega, Ciphertext ct){
+    mpz_t index;mpz_init(index);
+    fp12_t fp12_tmp;fp12_init(&fp12_tmp);
+    sym_t sym_tmp;sym_init(&sym_tmp);
+
+    // 復号
+    fp12_t M_tmp;fp12_init(&M_tmp);
+
+    mpz_t r_w1;mpz_init(r_w1);
+    mpz_urandomm(r_w1, state, order_z);         // r_{ω,1} ← Zr
+    mpz_t r_w2;mpz_init(r_w2);
+    mpz_urandomm(r_w2, state, order_z);         // r_{ω,2} ← Zr
+    mpz_t r_w3;mpz_init(r_w3);
+    mpz_urandomm(r_w3, state, order_z);         // r_{ω,3} ← Zr
+    mpz_t r_w4;mpz_init(r_w4);
+    mpz_urandomm(r_w4, state, order_z);         // r_{ω,4} ← Zr
+
+
+    // h_{ω,1} ← (h1 g^{-r_{ω,1}})^{1/(α-ω)}
+    sym_t h_w1;sym_init(&h_w1);
+    mpz_neg(index, r_w1);                       // -r_{ω,1}
+    mpz_mod(index, index, order_z);             // -r_{ω,1} mod r
+    bls12_sym_scm(&h_w1, &pk.g, index);             // g^{-r_{ω,1}}
+    sym_eca(&h_w1, &pk.h1, &h_w1);            // h1 g^{-r_{ω,1}}
+    mpz_sub(index, sk.alpha, omega);            // α - ω
+    mpz_mod(index, index, order_z);             // α - ω mod r
+    mpz_invert(index, index, order_z);          // 1 / α - ω
+    bls12_sym_scm(&h_w1, &h_w1, index);             // (h1 g^{-r_{ω,1}})^{1/(α-ω)}
+
+
+    // h_{ω,2} ← (h2 g^{-r_{ω,2}})^{1/(α-ω)}
+    sym_t h_w2;sym_init(&h_w2);
+    mpz_neg(index, r_w2);                       // r_{ω,2}
+    mpz_mod(index, index, order_z);             // -r_{ω,2} mod r
+    bls12_sym_scm(&h_w2, &pk.g, index);             // g^{-r_{ω,2}}
+    sym_eca(&h_w2, &pk.h2, &h_w2);            // h2 g^{-r_{ω,2}}
+    mpz_sub(index, sk.alpha, omega);            // α - ω
+    mpz_mod(index, index, order_z);             // α - ω mod r
+    mpz_invert(index, index, order_z);          // 1 / α - ω
+    bls12_sym_scm(&h_w2, &h_w2, index);             // (h2 g^{-r_{ω,2}})^{1/(α-ω)}
+
+    // h_{ω,3} ← (h3 g^{-r_{ω,3}})^{1/(α-ω)}
+    sym_t h_w3;sym_init(&h_w3);
+    mpz_neg(index, r_w3);                       // r_{ω,3}
+    mpz_mod(index, index, order_z);             // -r_{ω,3} mod r
+    bls12_sym_scm(&h_w3, &pk.g, index);             // g^{-r_{ω,3}}
+    sym_eca(&h_w3, &pk.h3, &h_w3);            // h3 g^{-r_{ω,3}}
+    mpz_sub(index, sk.alpha, omega);            // α - ω
+    mpz_mod(index, index, order_z);             // α - ω mod r
+    mpz_invert(index, index, order_z);          // 1 / α - ω
+    bls12_sym_scm(&h_w3, &h_w3, index);             // (h3 g^{-r_{ω,3}})^{1/(α-ω)}
+
+    // h_{ω,4} ← (h4 g^{-r_{ω,4}})^{1/(α-ω)}
+    sym_t h_w4;sym_init(&h_w4);
+    mpz_neg(index, r_w4);                       // r_{ω,4}
+    mpz_mod(index, index, order_z);             // -r_{ω,4} mod r
+    bls12_sym_scm(&h_w4, &pk.g, index);             // g^{-r_{ω,4}}
+    sym_eca(&h_w4, &pk.h4, &h_w4);            // h4 g^{-r_{ω,4}}
+    mpz_sub(index, sk.alpha, omega);            // α - ω
+    mpz_mod(index, index, order_z);             // α - ω mod r
+    mpz_invert(index, index, order_z);          // 1 / α - ω
+    bls12_sym_scm(&h_w4, &h_w4, index);             // (h4 g^{-r_{ω,4}})^{1/(α-ω)}
+
+    mpz_t delta;mpz_init(delta);
+    Gamma(delta, ct.c1, ct.c2, ct.c3, ct.c4);           // δ ← Γ(c1,c2,c3,c4)
+
+    // c4' ← e(c1,h_{ω,2}) c2^{r_{ω,2}}
+    fp12_t c4_prime;fp12_init(&c4_prime);
+    bls12_symmetric_optate_pairing(&c4_prime, &ct.c1, &h_w2);           // e(c1,h_{ω,2})
+    bls12_g3_exp_basic(&fp12_tmp, &ct.c2, r_w2);                  // c2^{r_{ω,2}}
+    fp12_mul(&c4_prime, &c4_prime, &fp12_tmp);          // e(c1,h_{ω,2}) c2^{r_{ω,2}}
+
+    // c5 ← e(c1,h_{ω,3} h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
+    fp12_t c5;fp12_init(&c5);
+    bls12_sym_scm(&sym_tmp, &h_w4, delta);                // h_{ω,4}^δ
+    sym_eca(&sym_tmp, &h_w3, &sym_tmp);           // h_{ω,3) h_{ω,4}^δ
+    bls12_symmetric_optate_pairing(&fp12_tmp, &ct.c1, &sym_tmp);      // e(c1,h_{ω,3) h_{ω,4}^δ)
+    mpz_mul(index, r_w4, delta);                        // r_{ω,4}δ
+    mpz_add(index, index, r_w3);                        // r_{ω,3}+r_{ω,4}δ
+    bls12_g3_exp_basic(&c5, &ct.c2, index);                       // c2^{r_{ω,3}+r_{ω,4}δ}
+    fp12_mul(&c5, &fp12_tmp, &c5);                      // e(c1,h_{ω,3} h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
+
+    // τ_ch ← F(c5)
+    mpz_t tau_ch;mpz_init(tau_ch);
+    Function(tau_ch, c5);
+
+    if(fp12_cmp(&ct.c4, &c4_prime) != 0 || mpz_cmp(ct.tau, tau_ch) != 0){
+        fp12_set(M, &M_tmp);
+        printf("DecryptionError\n");
+        if(fp12_cmp(&ct.c4, &c4_prime) != 0){
+            printf("c4 != c4'\n");
+        }
+        if(mpz_cmp(ct.tau, tau_ch) != 0){
+            printf("tau != tau_ch\n");
+        }
+    }
+
+    else{
+        // M ← c3 e(c1,h_{ω,1}) c2^{r_{ω,1}}
+        bls12_symmetric_optate_pairing(&fp12_tmp, &ct.c1, &h_w1);       // e(c1,h_{ω,1})
+        fp12_mul(&M_tmp, &ct.c3, &fp12_tmp);            // c3 e(c1,h_{ω,1})
+        bls12_g3_exp_basic(&fp12_tmp, &ct.c2, r_w1);              // c2^{r_{ω,1}}
+        fp12_mul(&M_tmp, &M_tmp, &fp12_tmp);            // M = c3 e(c1,h_{ω,1}) c2^{r_{ω,1}}
+        fp12_set(M, &M_tmp);
+    }
+
+    // 解放
+    mpz_clear(index);
+    mpz_clear(delta);
+    mpz_clear(r_w1);
+    mpz_clear(r_w2);
+    mpz_clear(r_w3);
+    mpz_clear(r_w4);
+    mpz_clear(tau_ch);
+
+}
+
+
+void Eval(Ciphertext *ct, PubKey pk, HomKey hk, Ciphertext ct1, Ciphertext ct2, PreValue pv){
+    
+    mpz_t index;mpz_init(index);
+    fp12_t fp12_tmp;fp12_init(&fp12_tmp);
+    sym_t sym_tmp;sym_init(&sym_tmp);
+    
+    // δ_1 = Γ(c_{1,1}, c_{1,2}, c_{1,3}, c_{1,4})
+    mpz_t delta1;mpz_init(delta1);
+    Gamma(delta1, ct1.c1, ct1.c2, ct1.c3, ct1.c4);
+
+    // c_{1,5} ← e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1) c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
+    fp12_t c1_5;fp12_init(&c1_5);
+    bls12_sym_scm(&sym_tmp, &hk.hw4, delta1);         // h_{ω,4}^δ_1
+    sym_eca(&sym_tmp, &sym_tmp, &hk.hw3);     // h_{ω,3} + h_{ω,4}^δ_1
+    bls12_symmetric_optate_pairing(&c1_5, &ct1.c1, &sym_tmp);         // e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1)
+    mpz_mul(index, hk.rw4, delta1);                 // r_{ω,4}δ_1
+    mpz_add(index, index, hk.rw3);                  // r_{ω,3}+r_{ω,4}δ_1
+    bls12_g3_exp_basic(&fp12_tmp, &ct1.c2, index);                // c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
+    fp12_mul(&c1_5, &c1_5, &fp12_tmp);                  // c_{1,5} = e(c_{1,1},h_{ω,3} h_{ω,4}^δ_1) c_{1,2}^{r_{ω,3}+r_{ω,4}δ_1}
+
+    // δ_2 = Γ(c_{2,1}, c_{2,2}, c_{2,3}, c_{2,4})
+    mpz_t delta2;mpz_init(delta2);
+    Gamma(delta2, ct2.c1, ct2.c2, ct2.c3, ct2.c4);
+
+    // c_{2,5} ← e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2) c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
+    fp12_t c2_5;fp12_init(&c2_5);
+    bls12_sym_scm(&sym_tmp, &hk.hw4, delta2);       // h_{ω,4}^δ_2
+    sym_eca(&sym_tmp, &sym_tmp, &hk.hw3);    // h_{ω,3} + h_{ω,4}^δ_2
+    bls12_symmetric_optate_pairing(&c2_5, &ct2.c1, &sym_tmp);         // e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2)
+    mpz_mul(index, hk.rw4, delta2);                 // r_{ω,4}δ_2
+    mpz_add(index, index, hk.rw3);                  // r_{ω,3}+r_{ω,4}δ_2
+    fp12_pow(&fp12_tmp, &ct2.c2, index);              // c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
+    fp12_mul(&c2_5, &c2_5, &fp12_tmp);                 // c_{2,5} = e(c_{2,1},h_{ω,3} h_{ω,4}^δ_2) c_{2,2}^{r_{ω,3}+r_{ω,4}δ_2}
+
+    mpz_t tau_ch1;mpz_init(tau_ch1);
+    Function(tau_ch1, c1_5);                            // τ_ch1 ← F(c_{1,5})
+    mpz_t tau_ch2;mpz_init(tau_ch2);
+    Function(tau_ch2, c2_5);                            // τ_ch2 ← F(c_{2,5})
+    if(mpz_cmp(tau_ch1, ct1.tau) != 0 || mpz_cmp(tau_ch2, ct2.tau) != 0){
+        printf("EvaluationError\n");
+    }
+
+    else{
+        Ciphertext ct_tmp;ct_init(&ct_tmp);
+
+        // s ← Zr
+        mpz_t s;mpz_init(s);
+        mpz_urandomm(s, state, order_z);
+
+        // c1 ← c_{1,1} c_{2,1} g_1^s g^{-sω}
+        sym_set(&ct_tmp.c1, &pk.g1);
+        fp12_set_neg(&ct_tmp.c1.p.y, &ct_tmp.c1.p.y);         // g_1^{-1}
+        fp12_set_neg(&ct_tmp.c1.q.y, &ct_tmp.c1.q.y);         // g_1^{-1}
+        sym_eca(&ct_tmp.c1, &ct_tmp.c1, &hk.gw);      // g_1^{-1} g^ω
+        mpz_neg(index, s);                              // -s
+        mpz_mod(index, index, order_z);                       // -s mod r
+        bls12_sym_scm(&ct_tmp.c1, &ct_tmp.c1, index);     // g_1^s g^{-sω}
+        sym_eca(&ct_tmp.c1, &ct_tmp.c1, &ct1.c1);    // c_{1,1} g_1^s g^{-sω}
+        sym_eca(&ct_tmp.c1, &ct_tmp.c1, &ct2.c1);    // c_{1,1} c_{2,1} g_1^s g^{-sω}
+
+        // c2 ← c_{1,2} c_{2,2} e(g,g)^s
+        fp12_pow(&ct_tmp.c2, &pv.gg, s);          // e(g,g)^s
+        fp12_mul(&ct_tmp.c2, &ct_tmp.c2, &ct1.c2);     // c_{1,2} e(g,g)^s
+        fp12_mul(&ct_tmp.c2, &ct_tmp.c2, &ct2.c2);     // c_{1,2} c_{2,2} e(g,g)^s
+
+        // c3 ← c_{1,3} c_{2,3} e(g,h_1)^{-s}
+        mpz_neg(index, s);                              // -s
+        mpz_mod(index, index, order_z);                       // -s mod r
+        fp12_pow(&ct_tmp.c3, &pv.gh1, index);      // e(g,h_1)^{-s}
+        fp12_mul(&ct_tmp.c3, &ct_tmp.c3, &ct1.c3);     // c_{1,3} e(g,h_1)^{-s}
+        fp12_mul(&ct_tmp.c3, &ct_tmp.c3, &ct2.c3);     // c_{1,3} c_{2,3} e(g,h_1)^{-s}
+
+        // c4 ← c_{1,4} c_{2,4} e(g,h_2)^s
+        fp12_pow(&ct_tmp.c4, &pv.gh2, s);          // e(g,h_2)^s
+        fp12_mul(&ct_tmp.c4, &ct_tmp.c4, &ct1.c4);     // c_{1,4} e(g,h_2)^s
+        fp12_mul(&ct_tmp.c4, &ct_tmp.c4, &ct2.c4);     // c_{1,4} c_{2,4} e(g,h_2)^s
+
+        // δ ← Γ(c1,c2,c3,c4)
+        mpz_t delta;mpz_init(delta);
+        Gamma(delta, ct_tmp.c1, ct_tmp.c2, ct_tmp.c3, ct_tmp.c4);
+        
+        // c5 ← e(c1,h_{ω,3} h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
+        fp12_t c5;fp12_init(&c5);
+        bls12_sym_scm(&sym_tmp, &hk.hw4, delta);            // h_{ω,4}^δ
+        sym_eca(&sym_tmp, &hk.hw3, &sym_tmp);        // h_{ω,3) h_{ω,4}^δ
+        bls12_symmetric_optate_pairing(&fp12_tmp, &ct_tmp.c1, &sym_tmp);      // e(c1,h_{ω,3} h_{ω,4}^δ)
+        mpz_mul(index, hk.rw4, delta);                      // r_{ω,4}δ
+        mpz_add(index, index, hk.rw3);                      // r_{ω,3}+r_{ω,4}δ
+        fp12_pow(&c5, &ct_tmp.c2, index);                     // c2^{r_{ω,3}+r_{ω,4}δ}
+        fp12_mul(&c5, &fp12_tmp, &c5);                         // c5 = e(c1,h_{ω,3} h_{ω,4}^δ) c2^{r_{ω,3}+r_{ω,4}δ}
+
+        Function(ct_tmp.tau, c5);                               // τ ← F(c5)
+
+        // 代入
+        sym_set(&ct->c1, &ct_tmp.c1);
+        fp12_set(&ct->c2, &ct_tmp.c2);
+        fp12_set(&ct->c3, &ct_tmp.c3);
+        fp12_set(&ct->c4, &ct_tmp.c4);
+        mpz_set(ct->tau, ct_tmp.tau);
+
+        // 解放
+        mpz_clear(s);
+        mpz_clear(delta);
+    }
+
+    mpz_clear(index);
+}
+
+
+int main (){
+    // bls parameters
+    bls12_init();
+    bls12_print_parameters();
+    printf("====================================================================================\n");
+    printf("\n");
+
+    // 生成元
+    efp_t gen1;efp_init(&gen1);
+    efp2_t gen2;efp2_init(&gen2);
+    g1_set_random(&gen1, state);
+    g2_set_random(&gen2, state);
+
+    // Message
+    fp12_t M;fp12_init(&M);
+    fp12_set_random(&M, state);
+    fp12_println("Message : ", &M);
+    printf("\n");
+
+    mpz_t omega;mpz_init(omega);
+    mpz_urandomm(omega, state, order_z);
+    gmp_printf("Key Word : %Zd\n", omega);
+    printf("\n");
+    
+
+    // Key Generate
+    printf("Public Key = (g, g_1, h_1, h_2, h_3, h_4, hk, f)\n");
+    PubKey pk;pk_init(&pk);
+    pk_init(&pk);
+    SecKey sk;
+    sk_init(&sk);
+    KeyGen(&pk, &sk, gen1, gen2);
+    sym_println("g : ", &pk.g);
+    sym_println("g_1 : ", &pk.g1);
+    sym_println("h_1 : ", &pk.h1);
+    sym_println("h_2 : ", &pk.h2);
+    sym_println("h_3 : ", &pk.h3);
+    sym_println("h_4 : ", &pk.h4);
+    printf("hk, f : SHA-512\n");
+    printf("\n");
+
+    printf("Secret Key = α\n");
+    gmp_printf("α : %Zd\n", sk.alpha);
+    printf("\n");
+
+
+    // Pre Calculation
+    PreValue pv;pv_init(&pv);
+    PreCal(&pv, pk);
+
+
+    // Homomorphic Key Generate
+    printf("Homomorphic Key = (g^ω, (r_{ω,3}, h_{ω,3}), (r_{ω,4}, h_{ω,4}))\n");
+    HomKey hk;hk_init(&hk);
+    HomKeyGen(&hk, pk, sk, omega);
+    sym_println("g^ω : ", &hk.gw);
+    gmp_printf("r_{ω,3} : %Zd\n", hk.rw3);
+    sym_println("h_{ω,3} : ", &hk.hw3);
+    gmp_printf("r_{ω,4} : %Zd\n", hk.rw4);
+    sym_println("h_{ω,4} : ", &hk.hw4);
+    printf("\n");
+
+
+    // Encryption
+    printf("Cypher Text = (c_1, c_2, c_3, c_4, τ)\n");
+    Ciphertext ct;ct_init(&ct);
+    Enc(&ct, pk, M, omega, pv);
+    sym_println("c_1 : ", &ct.c1);
+    fp12_println("c_2 : ", &ct.c2);
+    fp12_println("c_3 : ", &ct.c3);
+    fp12_println("c_4 : ", &ct.c4);
+    gmp_printf("τ : %Zd\n", ct.tau);
+    printf("\n");
+
+
+    // Test
+    int test = 0;
+    test = Test(pk, hk, ct);
+    printf("Test Result : ");
+    if(test == 1){printf("Success\n");}
+    else{printf("Failed\n");}
+    printf("\n");
+
+
+    // Decryption
+    // printf("Decryption\n");
+    Dec(&M, pk, sk, omega, ct);
+    fp12_println("Decrypted Message : ", &M);
+    printf("\n");
+
+
+    // Multiplication
+    fp12_t M1;fp12_init(&M1);
+    fp12_t M2;fp12_init(&M2);
+    fp12_set_random(&M1, state);
+    fp12_set_random(&M2, state);
+    fp12_println("Message1 : ", &M1);
+    fp12_println("Message2 : ", &M2);
+    printf("\n");
+
+    Ciphertext ct1;ct_init(&ct1);
+    Ciphertext ct2;ct_init(&ct2);
+    Enc(&ct1, pk, M1, omega, pv);
+    Enc(&ct2, pk, M2, omega, pv);
+    printf("\n");
+
+    Ciphertext ct_mul;ct_init(&ct_mul);
+    Eval(&ct_mul, pk, hk, ct1, ct2, pv);
+    printf("\n");
+
+    test = Test(pk, hk, ct_mul);
+    printf("Test Result : ");
+    if(test == 1){printf("Success\n");}
+    else{printf("Failed\n");}
+    printf("\n");
+
+    fp12_t M_mul;fp12_init(&M_mul);
+    Dec(&M_mul, pk, sk, omega, ct_mul);
+    fp12_println("Decrypted Message : ", &M_mul);
+
+    fp12_mul(&M_mul, &M1, &M2);
+    fp12_println("Message1 * Message2 : ", &M_mul);
+
+
+    // 時間測定
+    struct timespec ts;
+    // struct tm tm;
+    long double start_sec, start_nsec, end_sec, end_nsec, exe_time_buf0;
+    int loop = 10;
+
+
+    // KeyGen
+    clock_gettime(CLOCK_REALTIME, &ts);
+    start_sec = ts.tv_sec;
+    start_nsec = ts.tv_nsec;
+    for (int i = 0; i < loop; i ++){
+        KeyGen(&pk, &sk, gen1, gen2);
+    }
+    clock_gettime(CLOCK_REALTIME, &ts);
+    end_sec = ts.tv_sec;
+    end_nsec = ts.tv_nsec;
+    exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    printf("KeyGen Time!! : %Lf[ms]\n", exe_time_buf0);
+
+    // HomKeyGen
+    clock_gettime(CLOCK_REALTIME, &ts);
+    start_sec = ts.tv_sec;
+    start_nsec = ts.tv_nsec;
+    for (int i = 0; i < loop; i ++){
+        HomKeyGen(&hk, pk, sk, omega);
+    }
+    clock_gettime(CLOCK_REALTIME, &ts);
+    end_sec = ts.tv_sec;
+    end_nsec = ts.tv_nsec;
+    exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    printf("HomKeyGen Time!! : %Lf[ms]\n", exe_time_buf0);
+
+    // Enc
+    clock_gettime(CLOCK_REALTIME, &ts);
+    start_sec = ts.tv_sec;
+    start_nsec = ts.tv_nsec;
+    for (int i = 0; i < loop; i ++){
+        Enc(&ct, pk, M, omega, pv);
+    }
+    clock_gettime(CLOCK_REALTIME, &ts);
+    end_sec = ts.tv_sec;
+    end_nsec = ts.tv_nsec;
+    exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    printf("Enc Time!! : %Lf[ms]\n", exe_time_buf0);
+
+    // Dec
+    fp12_set_random(&M, state);
+    mpz_urandomm(omega, state, order_z);
+    KeyGen(&pk, &sk, gen1, gen2);
+    HomKeyGen(&hk, pk, sk, omega);
+    PreCal(&pv, pk);
+    Enc(&ct, pk, M, omega, pv);
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    start_sec = ts.tv_sec;
+    start_nsec = ts.tv_nsec;
+    for (int i = 0; i < loop; i ++){
+        Dec(&M, pk, sk, omega, ct);
+    }
+    clock_gettime(CLOCK_REALTIME, &ts);
+    end_sec = ts.tv_sec;
+    end_nsec = ts.tv_nsec;
+    exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    printf("Dec Time!! : %Lf[ms]\n", exe_time_buf0);
+
+    // Test
+    fp12_set_random(&M, state);
+    mpz_urandomm(omega, state, order_z);
+    KeyGen(&pk, &sk, gen1, gen2);
+    HomKeyGen(&hk, pk, sk, omega);
+    PreCal(&pv, pk);
+    Enc(&ct, pk, M, omega, pv);
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    start_sec = ts.tv_sec;
+    start_nsec = ts.tv_nsec;
+    for (int i = 0; i < loop; i ++){
+        Test(pk, hk, ct);
+    }
+    clock_gettime(CLOCK_REALTIME, &ts);
+    end_sec = ts.tv_sec;
+    end_nsec = ts.tv_nsec;
+    exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    printf("Test Time!! : %Lf[ms]\n", exe_time_buf0);
+
+    // Eval
+    fp12_set_random(&M1, state);
+    fp12_set_random(&M2, state);
+    mpz_urandomm(omega, state, order_z);
+    KeyGen(&pk, &sk, gen1, gen2);
+    HomKeyGen(&hk, pk, sk, omega);
+    PreCal(&pv, pk);
+    Enc(&ct1, pk, M1, omega, pv);
+    Enc(&ct2, pk, M2, omega, pv);
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    start_sec = ts.tv_sec;
+    start_nsec = ts.tv_nsec;
+    for (int i = 0; i < loop; i ++){
+        Eval(&ct_mul, pk, hk, ct1, ct2, pv);
+    }
+    clock_gettime(CLOCK_REALTIME, &ts);
+    end_sec = ts.tv_sec;
+    end_nsec = ts.tv_nsec;
+    exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    printf("Eval Time!! : %Lf[ms]\n", exe_time_buf0);
+
+    // other
+    // efp12_t other1;efp12_init(&other1);
+    // G_random(&other1, gen1, gen2);
+    // efp12_t other2;efp12_init(&other2);
+    // G_random(&other2, gen1, gen2);
+    // fp12_t other3;fp12_init(&other3);
+    // fp12_set_random(&other3, state);
+    // fp12_t other4;fp12_init(&other4);
+    // fp12_set_random(&other4, state);
+    // mpz_t tmp;mpz_init(tmp);
+
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // start_sec = ts.tv_sec;
+    // start_nsec = ts.tv_nsec;
+    // for (int i = 0; i < loop; i ++){
+    //     bls12_symmetric_optate_pairing(&other3, other1, other2);
+    // }
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // end_sec = ts.tv_sec;
+    // end_nsec = ts.tv_nsec;
+    // exe_time_buf0 = ((end_sec - start_sec) + (end_nsec - start_nsec) / 1000000000.0)*1000.0/loop;
+    // printf("other!! : %Lf[ms]\n", exe_time_buf0);
+}
